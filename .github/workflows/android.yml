@@ -18,8 +18,8 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Generate Compatible Gradle Wrapper
-      run: gradle wrapper --gradle-version 8.5
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew

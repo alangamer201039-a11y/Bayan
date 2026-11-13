@@ -1,0 +1,6 @@
+{
+  "name": "بيان العراق",
+  "description": "تطبيق بيان الإخباري لمتابعة أخبار العراق، المحافظات، الاقتصاد، التكنولوجيا، والرياضة العراقية مع حالة الطقس المباشرة.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

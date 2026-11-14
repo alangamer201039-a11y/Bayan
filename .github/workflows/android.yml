@@ -1,44 +1,71 @@
-name: Build Android APK
+name: Build Bayan Iraq APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  build-debug-apk:
+    name: Build Debug APK
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
 
-    - name: Generate Gradle Wrapper
-      run: gradle wrapper --gradle-version 9.3.1
+      - name: Prepare Debug Keystore
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f debug.keystore ]; then
+            keytool -genkey -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug, O=Android, C=US"
+          fi
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon
 
-    - name: Generate Debug Keystore
-      run: |
-        keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US"
+      - name: Prepare APK for distribution
+        run: cp app/build/outputs/apk/debug/app-debug.apk bayan-iraq-debug.apk
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
-      env:
-        ANDROID_HOME: /usr/local/lib/android/sdk
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bayan-iraq-debug-apk
+          path: bayan-iraq-debug.apk
+          retention-days: 30
+          if-no-files-found: error
 
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
-        
+      - name: Attach APK to GitHub Release
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bayan-iraq-debug.apk
+          generate_release_notes: true

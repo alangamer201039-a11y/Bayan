@@ -27,8 +27,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.LocationCity
+import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.Button
@@ -45,19 +49,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.BayanTab
 import com.example.model.NewsArticle
+import com.example.model.NewsCategory
+import com.example.model.ProvinceWeather
+import com.example.ui.bayanString
 import com.example.ui.components.BreakingPulseBadge
 import com.example.ui.components.FeaturedHeroCard
 import com.example.ui.components.NewsArticleCard
+import com.example.ui.components.WeatherWidget
+import com.example.ui.theme.EmeraldLive
 import com.example.ui.theme.LocalBayanColors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,7 +80,16 @@ fun NewsFeedScreen(
     onRefresh: () -> Unit,
     onArticleClick: (NewsArticle) -> Unit,
     onToggleSave: (NewsArticle) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selectedCategory: NewsCategory = NewsCategory.ALL,
+    weather: ProvinceWeather? = null,
+    selectedProvince: String = "صلاح الدين",
+    isWeatherLoading: Boolean = false,
+    isDetectingLocation: Boolean = false,
+    onLocateGranted: () -> Unit = {},
+    onLocationPermissionDenied: () -> Unit = {},
+    onRefreshWeather: () -> Unit = {},
+    onProvinceClick: () -> Unit = {}
 ) {
     val bayanColors = LocalBayanColors.current
 
@@ -97,8 +115,8 @@ fun NewsFeedScreen(
 
                 hasLoadError && articles.isEmpty() && activeTab != BayanTab.SAVED -> {
                     EmptyOrErrorState(
-                        title = stringResource(R.string.error_load_title),
-                        subtitle = stringResource(R.string.error_load_subtitle),
+                        title = bayanString(R.string.error_load_title),
+                        subtitle = bayanString(R.string.error_load_subtitle),
                         icon = {
                             Icon(
                                 imageVector = Icons.Rounded.CloudOff,
@@ -119,7 +137,7 @@ fun NewsFeedScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.size(8.dp))
-                                Text(text = stringResource(R.string.action_retry))
+                                Text(text = bayanString(R.string.action_retry))
                             }
                         }
                     )
@@ -129,8 +147,8 @@ fun NewsFeedScreen(
                     when {
                         searchQuery.isNotBlank() -> {
                             EmptyOrErrorState(
-                                title = stringResource(R.string.empty_search_title),
-                                subtitle = stringResource(R.string.empty_search_subtitle),
+                                title = bayanString(R.string.empty_search_title),
+                                subtitle = bayanString(R.string.empty_search_subtitle),
                                 icon = {
                                     Icon(
                                         imageVector = Icons.Rounded.SearchOff,
@@ -148,8 +166,8 @@ fun NewsFeedScreen(
 
                         activeTab == BayanTab.BREAKING -> {
                             EmptyOrErrorState(
-                                title = stringResource(R.string.empty_breaking_title),
-                                subtitle = stringResource(R.string.empty_breaking_subtitle),
+                                title = bayanString(R.string.empty_breaking_title),
+                                subtitle = bayanString(R.string.empty_breaking_subtitle),
                                 icon = {
                                     Icon(
                                         imageVector = Icons.Rounded.LocalFireDepartment,
@@ -160,7 +178,31 @@ fun NewsFeedScreen(
                                 },
                                 actionButton = {
                                     Button(onClick = onRefresh, shape = CircleShape) {
-                                        Text(text = stringResource(R.string.action_refresh))
+                                        Text(text = bayanString(R.string.action_refresh))
+                                    }
+                                }
+                            )
+                        }
+
+                        else -> {
+                            EmptyOrErrorState(
+                                title = bayanString(R.string.empty_category_title),
+                                subtitle = bayanString(R.string.empty_category_subtitle),
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Newspaper,
+                                        contentDescription = null,
+                                        tint = bayanColors.accentBlue,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                },
+                                actionButton = {
+                                    Button(
+                                        onClick = onRefresh,
+                                        shape = CircleShape,
+                                        modifier = Modifier.testTag("empty_category_refresh_button")
+                                    ) {
+                                        Text(text = bayanString(R.string.action_refresh))
                                     }
                                 }
                             )
@@ -188,9 +230,35 @@ fun NewsFeedScreen(
                         ),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        if (activeTab == BayanTab.HOME && searchQuery.isBlank()) {
+                            item(key = "home_weather_widget") {
+                                WeatherWidget(
+                                    weather = weather,
+                                    selectedProvince = selectedProvince,
+                                    isWeatherLoading = isWeatherLoading,
+                                    isDetectingLocation = isDetectingLocation,
+                                    onLocateGranted = onLocateGranted,
+                                    onLocationPermissionDenied = onLocationPermissionDenied,
+                                    onRefreshWeather = onRefreshWeather,
+                                    onProvinceClick = onProvinceClick
+                                )
+                            }
+                        }
+
                         if (activeTab == BayanTab.BREAKING) {
                             item(key = "breaking_banner") {
                                 BreakingHeaderBanner(count = articles.size)
+                            }
+                        } else if (activeTab == BayanTab.HOME && searchQuery.isBlank() &&
+                            (selectedCategory == NewsCategory.HOLIDAYS ||
+                                selectedCategory == NewsCategory.DECISIONS_PROD ||
+                                selectedCategory == NewsCategory.GOVERNORATES)
+                        ) {
+                            item(key = "category_banner_${selectedCategory.id}") {
+                                OfficialCategoryBanner(
+                                    category = selectedCategory,
+                                    count = articles.size
+                                )
                             }
                         }
 
@@ -268,13 +336,13 @@ private fun BreakingHeaderBanner(count: Int) {
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.breaking_banner_title),
+                    text = bayanString(R.string.breaking_banner_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     fontWeight = FontWeight.Black
                 )
                 Text(
-                    text = stringResource(R.string.breaking_banner_subtitle),
+                    text = bayanString(R.string.breaking_banner_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = bayanColors.mutedText
                 )
@@ -283,7 +351,7 @@ private fun BreakingHeaderBanner(count: Int) {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 BreakingPulseBadge()
                 Text(
-                    text = "$count خبر",
+                    text = bayanString(R.string.count_news_format, count),
                     style = MaterialTheme.typography.labelSmall,
                     color = bayanColors.mutedText
                 )
@@ -291,6 +359,101 @@ private fun BreakingHeaderBanner(count: Int) {
         }
     }
 }
+
+@Composable
+private fun OfficialCategoryBanner(
+    category: NewsCategory,
+    count: Int
+) {
+    val bayanColors = LocalBayanColors.current
+    val (titleRes, subtitleRes, icon, accent) = when (category) {
+        NewsCategory.HOLIDAYS -> Quadruple(
+            R.string.banner_holidays_title,
+            R.string.banner_holidays_subtitle,
+            Icons.Rounded.EventAvailable,
+            EmeraldLive
+        )
+        NewsCategory.DECISIONS_PROD -> Quadruple(
+            R.string.banner_decisions_title,
+            R.string.banner_decisions_subtitle,
+            Icons.Rounded.AccountBalance,
+            bayanColors.accentBlue
+        )
+        else -> Quadruple(
+            R.string.banner_governorates_title,
+            R.string.banner_governorates_subtitle,
+            Icons.Rounded.LocationCity,
+            bayanColors.accentEmber
+        )
+    }
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = accent.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("category_banner_${category.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = accent.copy(alpha = 0.16f),
+                modifier = Modifier.size(42.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = bayanString(titleRes),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Black
+                )
+                Text(
+                    text = bayanString(subtitleRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = bayanColors.mutedText
+                )
+            }
+            Surface(
+                shape = CircleShape,
+                color = bayanColors.pillBackground,
+                border = BorderStroke(1.dp, bayanColors.glassBorder)
+            ) {
+                Text(
+                    text = bayanString(R.string.count_news_format, count),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accent,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
+        }
+    }
+}
+
+private data class Quadruple<A, B, C, D>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D
+)
 
 @Composable
 private fun EmptySavedIllustrationState() {
@@ -312,21 +475,21 @@ private fun EmptySavedIllustrationState() {
         ) {
             Image(
                 painter = painterResource(id = R.drawable.img_empty_bookmarks),
-                contentDescription = stringResource(R.string.cd_empty_saved),
+                contentDescription = bayanString(R.string.cd_empty_saved),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
         }
         Spacer(modifier = Modifier.height(20.dp))
         Text(
-            text = stringResource(R.string.empty_saved_title),
+            text = bayanString(R.string.empty_saved_title),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = stringResource(R.string.empty_saved_subtitle),
+            text = bayanString(R.string.empty_saved_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             color = bayanColors.mutedText,
             textAlign = TextAlign.Center

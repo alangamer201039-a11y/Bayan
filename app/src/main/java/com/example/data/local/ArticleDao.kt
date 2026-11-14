@@ -23,6 +23,9 @@ interface ArticleDao {
     @Query("UPDATE articles SET isSaved = :isSaved, savedAtMs = :savedAtMs WHERE id = :id")
     suspend fun updateSavedState(id: String, isSaved: Boolean, savedAtMs: Long)
 
+    @Query("UPDATE articles SET title = :title, summary = :summary, languageCode = :languageCode WHERE id = :id")
+    suspend fun updateTranslatedContent(id: String, title: String, summary: String, languageCode: String)
+
     @Query("DELETE FROM articles WHERE isSaved = 0 AND cachedAtMs < :cutoffMs")
     suspend fun pruneOldCache(cutoffMs: Long)
 }

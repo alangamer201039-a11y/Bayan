@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -40,12 +41,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +58,8 @@ import com.example.model.NewsArticle
 import com.example.model.NewsCategory
 import com.example.model.ReadingFontSize
 import com.example.model.SourceTrustLevel
+import com.example.ui.LocalAppLanguage
+import com.example.ui.bayanString
 import com.example.ui.theme.LocalBayanColors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,8 +72,12 @@ fun ArticleDetailSheet(
 ) {
     val context = LocalContext.current
     val bayanColors = LocalBayanColors.current
+    val language = LocalAppLanguage.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val categoryLabel = NewsCategory.fromId(article.categoryId).labelAr
+    val categoryLabel = NewsCategory.fromId(article.categoryId).label(language)
+    val shareChooserTitle = bayanString(R.string.share_chooser_title)
+    var detailImageFailed by remember(article.imageUrl) { mutableStateOf(false) }
+    val detailImageUrl = article.imageUrl?.takeIf { it.isNotBlank() && !detailImageFailed }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -133,7 +143,7 @@ fun ArticleDetailSheet(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.action_close),
+                            contentDescription = bayanString(R.string.action_close),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(18.dp)
                         )
@@ -177,7 +187,7 @@ fun ArticleDetailSheet(
                     modifier = Modifier.size(14.dp)
                 )
                 Text(
-                    text = article.relativeTimeAr(),
+                    text = article.relativeTime(language),
                     style = MaterialTheme.typography.labelMedium,
                     color = bayanColors.mutedText
                 )
@@ -187,6 +197,26 @@ fun ArticleDetailSheet(
                 modifier = Modifier.padding(vertical = 16.dp),
                 color = bayanColors.glassBorder
             )
+
+            if (detailImageUrl != null) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = bayanColors.pillBackground,
+                    border = BorderStroke(1.dp, bayanColors.glassBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .testTag("sheet_article_image")
+                ) {
+                    BayanNewsImage(
+                        imageUrl = detailImageUrl,
+                        contentDescription = bayanString(R.string.cd_article_image),
+                        onLoadFailed = { detailImageFailed = true },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             Text(
                 text = article.summary,
@@ -223,7 +253,7 @@ fun ArticleDetailSheet(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (article.isSaved) stringResource(R.string.action_saved) else stringResource(R.string.action_save),
+                        text = if (article.isSaved) bayanString(R.string.action_saved) else bayanString(R.string.action_save),
                         style = MaterialTheme.typography.labelLarge,
                         color = if (article.isSaved) bayanColors.accentEmber else MaterialTheme.colorScheme.onSurface
                     )
@@ -242,7 +272,7 @@ fun ArticleDetailSheet(
                             type = "text/plain"
                             putExtra(Intent.EXTRA_TEXT, shareText)
                         }
-                        context.startActivity(Intent.createChooser(intent, "مشاركة الخبر"))
+                        context.startActivity(Intent.createChooser(intent, shareChooserTitle))
                     },
                     modifier = Modifier
                         .size(50.dp)
@@ -251,7 +281,7 @@ fun ArticleDetailSheet(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Share,
-                        contentDescription = stringResource(R.string.action_share),
+                        contentDescription = bayanString(R.string.action_share),
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -277,7 +307,7 @@ fun ArticleDetailSheet(
                         .testTag("sheet_open_source_button")
                 ) {
                     Text(
-                        text = stringResource(R.string.action_open_source),
+                        text = bayanString(R.string.action_open_source),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )

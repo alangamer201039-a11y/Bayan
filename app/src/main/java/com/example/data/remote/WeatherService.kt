@@ -1,5 +1,6 @@
 package com.example.data.remote
 
+import com.example.model.AppLanguage
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
@@ -19,7 +20,11 @@ data class OpenMeteoResponse(
 @JsonClass(generateAdapter = true)
 data class CurrentWeatherDto(
     @Json(name = "temperature_2m") val temperature2m: Double?,
-    @Json(name = "weather_code") val weatherCode: Int?
+    @Json(name = "weather_code") val weatherCode: Int?,
+    @Json(name = "apparent_temperature") val apparentTemperature: Double? = null,
+    @Json(name = "relative_humidity_2m") val relativeHumidity2m: Int? = null,
+    @Json(name = "wind_speed_10m") val windSpeed10m: Double? = null,
+    @Json(name = "is_day") val isDay: Int? = null
 )
 
 interface OpenMeteoApi {
@@ -27,7 +32,7 @@ interface OpenMeteoApi {
     suspend fun getCurrentWeather(
         @Query("latitude") latitude: Double,
         @Query("longitude") longitude: Double,
-        @Query("current") current: String = "temperature_2m,weather_code"
+        @Query("current") current: String = "temperature_2m,weather_code,apparent_temperature,relative_humidity_2m,wind_speed_10m,is_day"
     ): OpenMeteoResponse
 }
 
@@ -59,5 +64,21 @@ object WeatherClient {
         80, 81, 82 -> "زخات مطر"
         95, 96, 99 -> "عواصف رعدية"
         else -> "معتدل"
+    }
+
+    fun weatherCodeToKurdish(code: Int?): String = when (code) {
+        0 -> "ئاسمانی ساماڵ"
+        1, 2 -> "کەمێک هەور"
+        3 -> "هەوراوی"
+        45, 48 -> "تەم"
+        51, 53, 55, 61, 63, 65 -> "باران"
+        80, 81, 82 -> "بارانی پچڕپچڕ"
+        95, 96, 99 -> "هەورەتریشقە و باران"
+        else -> "مامناوەند"
+    }
+
+    fun weatherCodeToLocalized(code: Int?, language: AppLanguage): String = when (language) {
+        AppLanguage.ARABIC -> weatherCodeToArabic(code)
+        AppLanguage.KURDISH -> weatherCodeToKurdish(code)
     }
 }

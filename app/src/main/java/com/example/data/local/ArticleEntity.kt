@@ -2,6 +2,7 @@ package com.example.data.local
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.example.model.AppLanguage
 import com.example.model.NewsArticle
 import com.example.model.SourceTrustLevel
 
@@ -17,9 +18,14 @@ data class ArticleEntity(
     val title: String,
     val summary: String,
     val link: String,
+    val imageUrl: String? = null,
     val isSaved: Boolean = false,
     val savedAtMs: Long = 0L,
-    val cachedAtMs: Long = System.currentTimeMillis()
+    val cachedAtMs: Long = System.currentTimeMillis(),
+    val languageCode: String = AppLanguage.ARABIC.code,
+    val originalTitle: String = title,
+    val originalSummary: String = summary,
+    val originalLanguageCode: String = languageCode
 ) {
     fun toDomain(): NewsArticle = NewsArticle(
         id = id,
@@ -32,7 +38,12 @@ data class ArticleEntity(
         title = title,
         summary = summary,
         link = link,
-        isSaved = isSaved
+        imageUrl = imageUrl,
+        isSaved = isSaved,
+        languageCode = languageCode,
+        originalTitle = originalTitle,
+        originalSummary = originalSummary,
+        originalLanguageCode = originalLanguageCode
     )
 
     companion object {
@@ -47,8 +58,13 @@ data class ArticleEntity(
             title = article.title,
             summary = article.summary,
             link = article.link,
+            imageUrl = article.imageUrl,
             isSaved = article.isSaved,
-            savedAtMs = savedAtMs
+            savedAtMs = savedAtMs,
+            languageCode = article.languageCode,
+            originalTitle = article.originalTitle,
+            originalSummary = article.originalSummary,
+            originalLanguageCode = article.originalLanguageCode
         )
     }
 }

@@ -1,11 +1,16 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.res.Resources
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.R
 import com.example.data.local.BayanDatabase
 import com.example.data.local.UserPreferencesRepository
+import com.example.data.location.LocationTracker
 import com.example.data.repository.BayanRepository
+import com.example.model.AppLanguage
 import com.example.model.BayanTab
 import com.example.model.IraqRelevanceFilter
 import com.example.model.IraqiProvinces
@@ -21,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -36,7 +42,10 @@ data class BayanUiState(
     val fontSize: ReadingFontSize = ReadingFontSize.MEDIUM,
     val verifiedSourcesOnly: Boolean = true,
     val autoRefreshEnabled: Boolean = true,
+    val language: AppLanguage = AppLanguage.ARABIC,
     val weather: ProvinceWeather? = null,
+    val isWeatherLoading: Boolean = false,
+    val isDetectingLocation: Boolean = false,
     val allArticles: List<NewsArticle> = emptyList(),
     val savedArticles: List<NewsArticle> = emptyList(),
     val filteredArticles: List<NewsArticle> = emptyList(),
@@ -54,11 +63,17 @@ private data class TransientState(
     val isLoading: Boolean = false,
     val hasLoadError: Boolean = false,
     val weather: ProvinceWeather? = null,
+    val isWeatherLoading: Boolean = false,
+    val isDetectingLocation: Boolean = false,
     val openedArticleId: String? = null,
     val toastMessage: String? = null
 )
 
 class BayanViewModel(application: Application) : AndroidViewModel(application) {
+    private val locationTracker: LocationTracker by lazy {
+        LocationTracker(application)
+    }
+
     private val repository: BayanRepository by lazy {
         val db = BayanDatabase.getInstance(application)
         BayanRepository(
@@ -67,7 +82,19 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private val transient = MutableStateFlow(TransientState(isLoading = true))
+    private val transient = MutableStateFlow(TransientState(isLoading = true, isWeatherLoading = true))
+
+    private fun localizedRes(language: AppLanguage = uiState.value.language): Resources =
+        getApplication<Application>().resourcesForLanguage(language)
+
+    private fun localizedStr(
+        @StringRes id: Int,
+        language: AppLanguage = uiState.value.language,
+        vararg args: Any
+    ): String {
+        val res = localizedRes(language)
+        return if (args.isEmpty()) res.getString(id) else res.getString(id, *args)
+    }
 
     val uiState: StateFlow<BayanUiState> = combine(
         repository.userPreferences,
@@ -75,7 +102,8 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
         repository.savedArticles,
         transient
     ) { prefs, all, saved, tr ->
-        val iraqOnly = all.filter { IraqRelevanceFilter.isRelatedToIraq(it) }
+        val langArticles = all.filter { it.languageCode == prefs.language.code }
+        val iraqOnly = langArticles.filter { IraqRelevanceFilter.isRelatedToIraq(it) }
         val trustedFiltered = if (prefs.verifiedSourcesOnly && tr.activeTab != BayanTab.SAVED) {
             val verified = iraqOnly.filter { it.trustLevel != SourceTrustLevel.GENERAL }
             verified.ifEmpty { iraqOnly }
@@ -89,8 +117,44 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
                 it.isBreaking || it.categoryId == NewsCategory.BREAKING.id
             }
             BayanTab.HOME -> {
-                if (tr.selectedCategory == NewsCategory.ALL) trustedFiltered
-                else trustedFiltered.filter { it.categoryId == tr.selectedCategory.id }
+                when (tr.selectedCategory) {
+                    NewsCategory.ALL -> trustedFiltered
+                    NewsCategory.HOLIDAYS -> trustedFiltered.filter { article ->
+                        article.categoryId == NewsCategory.HOLIDAYS.id ||
+                            "${article.title} ${article.summary}".let { txt ->
+                                txt.contains("عطلة") || txt.contains("تعطيل") || txt.contains("العطل") ||
+                                    txt.contains("التربية") || txt.contains("إجازة رسمية") ||
+                                    txt.contains("پشوو") || txt.contains("ڕاگرتنی دەوام") ||
+                                    txt.contains("وەزارەتی پەروەردە")
+                            }
+                    }
+                    NewsCategory.DECISIONS_PROD -> trustedFiltered.filter { article ->
+                        article.categoryId == NewsCategory.DECISIONS_PROD.id ||
+                            "${article.title} ${article.summary}".let { txt ->
+                                txt.contains("مجلس الوزراء") || txt.contains("مجلس وزراء") ||
+                                    txt.contains("دائرة الإعلام والمعلومات") || txt.contains("قرار") ||
+                                    txt.contains("إنتاج") || txt.contains("انتاج") ||
+                                    txt.contains("مشروع") || txt.contains("صناعة") ||
+                                    txt.contains("زراعة") || txt.contains("كهرباء") ||
+                                    txt.contains("ئەنجومەنی وەزیران") || txt.contains("حکومەتی هەرێم") ||
+                                    txt.contains("فەرمانگەی میدیا و زانیاری") || txt.contains("بڕیار") ||
+                                    txt.contains("پڕۆژە") || txt.contains("بەرهەم")
+                            }
+                    }
+                    NewsCategory.GOVERNORATES -> trustedFiltered.filter { article ->
+                        article.categoryId == NewsCategory.GOVERNORATES.id ||
+                            "${article.title} ${article.summary}".let { txt ->
+                                IraqiProvinces.all.any { prov ->
+                                    val primaryAr = prov.nameAr.substringBefore(" (")
+                                    val primaryCkb = prov.nameCkb.substringBefore(" (")
+                                    txt.contains(primaryAr) || txt.contains(primaryCkb) ||
+                                        (prov.nameAr.contains("نينوى") && (txt.contains("نينوى") || txt.contains("نەینەوا"))) ||
+                                        (prov.nameAr.contains("الديوانية") && (txt.contains("الديوانية") || txt.contains("دیوانیە")))
+                                }
+                            }
+                    }
+                    else -> trustedFiltered.filter { it.categoryId == tr.selectedCategory.id }
+                }
             }
             BayanTab.SETTINGS -> emptyList()
         }
@@ -120,8 +184,11 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
             fontSize = prefs.fontSize,
             verifiedSourcesOnly = prefs.verifiedSourcesOnly,
             autoRefreshEnabled = prefs.autoRefreshEnabled,
+            language = prefs.language,
             weather = tr.weather,
-            allArticles = all,
+            isWeatherLoading = tr.isWeatherLoading,
+            isDetectingLocation = tr.isDetectingLocation,
+            allArticles = langArticles,
             savedArticles = saved,
             filteredArticles = filtered,
             isLoading = tr.isLoading,
@@ -132,17 +199,29 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = BayanUiState(isLoading = true)
+        initialValue = BayanUiState(isLoading = true, isWeatherLoading = true)
     )
 
     init {
+        viewModelScope.launch {
+            val initialLang = repository.userPreferences.first().language
+            repository.retranslateCachedArticles(initialLang)
+        }
         refreshNews(manual = false)
+        viewModelScope.launch {
+            if (locationTracker.hasLocationPermission()) {
+                detectLocationAndRefreshWeather(userInitiated = false)
+            }
+        }
         viewModelScope.launch {
             repository.userPreferences
                 .map { it.selectedProvince }
                 .distinctUntilChanged()
                 .collect { provinceName ->
-                    loadWeatherForProvince(provinceName)
+                    val currentWeather = transient.value.weather
+                    if (currentWeather == null || !currentWeather.isFromGpsLocation || currentWeather.provinceName != provinceName) {
+                        loadWeatherForProvince(provinceName)
+                    }
                 }
         }
         // Fast periodic background refresh every 3 minutes when enabled
@@ -172,19 +251,21 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshNews(manual: Boolean = false) {
         val currentCat = transient.value.selectedCategory
+        val currentLang = uiState.value.language
         transient.value = transient.value.copy(
             isLoading = true,
             hasLoadError = false,
-            toastMessage = if (manual) "جاري تحديث الأخبار من المصادر الرسمية والموثوقة..." else transient.value.toastMessage
+            toastMessage = if (manual) localizedStr(R.string.toast_refreshing, currentLang) else transient.value.toastMessage
         )
         viewModelScope.launch {
             val result = repository.refreshNews(currentCat)
+            val activeLang = uiState.value.language
             transient.value = transient.value.copy(
                 isLoading = false,
                 hasLoadError = result.isFailure,
                 toastMessage = when {
-                    manual && result.isSuccess -> "تم تحديث الأخبار بنجاح"
-                    manual && result.isFailure -> "تعذر التحديث، تحقق من الاتصال بالإنترنت"
+                    manual && result.isSuccess -> localizedStr(R.string.toast_refresh_success, activeLang)
+                    manual && result.isFailure -> localizedStr(R.string.toast_refresh_error, activeLang)
                     else -> transient.value.toastMessage
                 }
             )
@@ -193,12 +274,80 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadWeatherForProvince(provinceName: String) {
         viewModelScope.launch {
+            transient.value = transient.value.copy(isWeatherLoading = true)
             val province = IraqiProvinces.findByName(provinceName)
             val weather = repository.fetchWeather(province)
-            if (weather != null) {
-                transient.value = transient.value.copy(weather = weather)
+            transient.value = transient.value.copy(
+                weather = weather ?: transient.value.weather,
+                isWeatherLoading = false
+            )
+        }
+    }
+
+    fun refreshWeather() {
+        val currentProvince = uiState.value.selectedProvince
+        if (locationTracker.hasLocationPermission() && transient.value.weather?.isFromGpsLocation == true) {
+            detectLocationAndRefreshWeather(userInitiated = false)
+        } else {
+            loadWeatherForProvince(currentProvince)
+        }
+    }
+
+    fun detectLocationAndRefreshWeather(userInitiated: Boolean = true) {
+        viewModelScope.launch {
+            transient.value = transient.value.copy(
+                isDetectingLocation = true,
+                isWeatherLoading = true
+            )
+            val coords = locationTracker.getCurrentCoordinates()
+            val lang = uiState.value.language
+
+            if (coords != null && IraqiProvinces.isWithinIraqBounds(coords.latitude, coords.longitude)) {
+                val nearest = IraqiProvinces.nearestProvince(coords.latitude, coords.longitude)
+                val weather = repository.fetchWeatherByCoordinates(
+                    latitude = coords.latitude,
+                    longitude = coords.longitude,
+                    provinceName = nearest.nameAr,
+                    isFromGpsLocation = true
+                )
+                repository.setSelectedProvince(nearest.nameAr)
+                transient.value = transient.value.copy(
+                    weather = weather ?: transient.value.weather,
+                    isDetectingLocation = false,
+                    isWeatherLoading = false,
+                    toastMessage = if (userInitiated && weather != null) {
+                        localizedStr(R.string.toast_location_detected, lang, nearest.displayName(lang))
+                    } else {
+                        transient.value.toastMessage
+                    }
+                )
+            } else {
+                val fallbackProvince = IraqiProvinces.findByName(uiState.value.selectedProvince)
+                val weather = repository.fetchWeather(fallbackProvince)
+                transient.value = transient.value.copy(
+                    weather = weather ?: transient.value.weather,
+                    isDetectingLocation = false,
+                    isWeatherLoading = false,
+                    toastMessage = when {
+                        userInitiated && coords != null -> localizedStr(
+                            R.string.toast_location_outside_iraq,
+                            lang,
+                            fallbackProvince.displayName(lang)
+                        )
+                        userInitiated -> localizedStr(R.string.toast_location_unavailable, lang)
+                        else -> transient.value.toastMessage
+                    }
+                )
             }
         }
+    }
+
+    fun onLocationPermissionDenied() {
+        val lang = uiState.value.language
+        transient.value = transient.value.copy(
+            isDetectingLocation = false,
+            toastMessage = localizedStr(R.string.toast_location_permission_denied, lang)
+        )
     }
 
     fun toggleSearch() {
@@ -227,7 +376,29 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
     fun selectProvince(provinceName: String) {
         viewModelScope.launch {
             repository.setSelectedProvince(provinceName)
-            transient.value = transient.value.copy(toastMessage = "تم اختيار محافظة $provinceName")
+            val lang = uiState.value.language
+            val displayProvince = IraqiProvinces.findByName(provinceName).displayName(lang)
+            transient.value = transient.value.copy(
+                toastMessage = localizedStr(R.string.toast_province_selected, lang, displayProvince)
+            )
+        }
+    }
+
+    fun selectLanguage(language: AppLanguage) {
+        if (language == uiState.value.language) return
+        viewModelScope.launch {
+            repository.setLanguage(language)
+            transient.value = transient.value.copy(
+                isLoading = true,
+                hasLoadError = false,
+                toastMessage = localizedStr(R.string.toast_language_changed, language, language.labelNative)
+            )
+            repository.retranslateCachedArticles(language)
+            val result = repository.refreshNews(transient.value.selectedCategory)
+            transient.value = transient.value.copy(
+                isLoading = false,
+                hasLoadError = result.isFailure && uiState.value.filteredArticles.isEmpty()
+            )
         }
     }
 
@@ -240,8 +411,12 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
     fun setVerifiedSourcesOnly(enabled: Boolean) {
         viewModelScope.launch {
             repository.setVerifiedSourcesOnly(enabled)
+            val lang = uiState.value.language
             transient.value = transient.value.copy(
-                toastMessage = if (enabled) "تم تفعيل فلتر المصادر الرسمية والموثوقة فقط" else "تم عرض جميع المصادر الإخبارية"
+                toastMessage = localizedStr(
+                    if (enabled) R.string.toast_verified_enabled else R.string.toast_verified_disabled,
+                    lang
+                )
             )
             refreshNews(manual = false)
         }
@@ -250,8 +425,12 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
     fun setAutoRefreshEnabled(enabled: Boolean) {
         viewModelScope.launch {
             repository.setAutoRefreshEnabled(enabled)
+            val lang = uiState.value.language
             transient.value = transient.value.copy(
-                toastMessage = if (enabled) "تم تفعيل التحديث التلقائي السريع" else "تم إيقاف التحديث التلقائي"
+                toastMessage = localizedStr(
+                    if (enabled) R.string.toast_auto_refresh_enabled else R.string.toast_auto_refresh_disabled,
+                    lang
+                )
             )
         }
     }
@@ -259,8 +438,12 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleSaveArticle(article: NewsArticle) {
         viewModelScope.launch {
             val nowSaved = repository.toggleSave(article)
+            val lang = uiState.value.language
             transient.value = transient.value.copy(
-                toastMessage = if (nowSaved) "تم حفظ الخبر بنجاح" else "أُزيل من المحفوظات"
+                toastMessage = localizedStr(
+                    if (nowSaved) R.string.toast_saved else R.string.toast_unsaved,
+                    lang
+                )
             )
         }
     }

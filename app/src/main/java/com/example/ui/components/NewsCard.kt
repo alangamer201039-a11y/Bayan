@@ -33,6 +33,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -42,7 +45,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,6 +52,8 @@ import com.example.R
 import com.example.model.NewsArticle
 import com.example.model.NewsCategory
 import com.example.model.SourceTrustLevel
+import com.example.ui.LocalAppLanguage
+import com.example.ui.bayanString
 import com.example.ui.theme.EmeraldLive
 import com.example.ui.theme.LocalBayanColors
 
@@ -61,7 +65,10 @@ fun FeaturedHeroCard(
     modifier: Modifier = Modifier
 ) {
     val bayanColors = LocalBayanColors.current
-    val categoryLabel = NewsCategory.fromId(article.categoryId).labelAr
+    val language = LocalAppLanguage.current
+    val categoryLabel = NewsCategory.fromId(article.categoryId).label(language)
+    var heroImageFailed by remember(article.imageUrl) { mutableStateOf(false) }
+    val heroImageUrl = article.imageUrl?.takeIf { it.isNotBlank() && !heroImageFailed }
 
     Surface(
         onClick = onArticleClick,
@@ -76,14 +83,24 @@ fun FeaturedHeroCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(232.dp)
+                .height(236.dp)
         ) {
             Image(
                 painter = painterResource(id = R.drawable.img_iraq_editorial_banner),
-                contentDescription = stringResource(R.string.cd_editorial_banner),
+                contentDescription = bayanString(R.string.cd_editorial_banner),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+            if (heroImageUrl != null) {
+                BayanNewsImage(
+                    imageUrl = heroImageUrl,
+                    contentDescription = bayanString(R.string.cd_article_image),
+                    onLoadFailed = { heroImageFailed = true },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("featured_hero_image")
+                )
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -140,7 +157,7 @@ fun FeaturedHeroCard(
                     ) {
                         Icon(
                             imageVector = if (article.isSaved) Icons.Rounded.Bookmark else Icons.Outlined.BookmarkBorder,
-                            contentDescription = stringResource(R.string.cd_bookmark),
+                            contentDescription = bayanString(R.string.cd_bookmark),
                             tint = if (article.isSaved) bayanColors.accentEmber else Color.White
                         )
                     }
@@ -183,7 +200,7 @@ fun FeaturedHeroCard(
                                 modifier = Modifier.size(13.dp)
                             )
                             Text(
-                                text = article.relativeTimeAr(),
+                                text = article.relativeTime(language),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFFCBD5E1)
                             )
@@ -203,7 +220,10 @@ fun NewsArticleCard(
     modifier: Modifier = Modifier
 ) {
     val bayanColors = LocalBayanColors.current
-    val categoryLabel = NewsCategory.fromId(article.categoryId).labelAr
+    val language = LocalAppLanguage.current
+    val categoryLabel = NewsCategory.fromId(article.categoryId).label(language)
+    var imageLoadFailed by remember(article.imageUrl) { mutableStateOf(false) }
+    val validImageUrl = article.imageUrl?.takeIf { it.isNotBlank() && !imageLoadFailed }
 
     Surface(
         onClick = onArticleClick,
@@ -262,29 +282,74 @@ fun NewsArticleCard(
                 ) {
                     Icon(
                         imageVector = if (article.isSaved) Icons.Rounded.Bookmark else Icons.Outlined.BookmarkBorder,
-                        contentDescription = stringResource(R.string.cd_bookmark),
+                        contentDescription = bayanString(R.string.cd_bookmark),
                         tint = if (article.isSaved) bayanColors.accentEmber else bayanColors.mutedText,
                         modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            Text(
-                text = article.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (validImageUrl != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = article.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = article.summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = bayanColors.mutedText,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
 
-            Text(
-                text = article.summary,
-                style = MaterialTheme.typography.bodyMedium,
-                color = bayanColors.mutedText,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = bayanColors.pillBackground,
+                        border = BorderStroke(1.dp, bayanColors.glassBorder),
+                        modifier = Modifier
+                            .size(width = 104.dp, height = 88.dp)
+                            .testTag("article_image_${article.id}")
+                    ) {
+                        BayanNewsImage(
+                            imageUrl = validImageUrl,
+                            contentDescription = bayanString(R.string.cd_article_image),
+                            onLoadFailed = { imageLoadFailed = true },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = article.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = article.summary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = bayanColors.mutedText,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -315,7 +380,7 @@ fun NewsArticleCard(
                         modifier = Modifier.size(13.dp)
                     )
                     Text(
-                        text = article.relativeTimeAr(),
+                        text = article.relativeTime(language),
                         style = MaterialTheme.typography.labelSmall,
                         color = bayanColors.mutedText
                     )
@@ -335,9 +400,9 @@ fun SourceTrustBadge(
     val isOfficial = trustLevel == SourceTrustLevel.OFFICIAL
     val badgeColor = if (isOfficial) EmeraldLive else bayanColors.accentBlue
     val label = when (trustLevel) {
-        SourceTrustLevel.OFFICIAL -> stringResource(R.string.trust_official_badge)
-        SourceTrustLevel.VERIFIED -> stringResource(R.string.trust_verified_badge)
-        SourceTrustLevel.GENERAL -> stringResource(R.string.trust_general_badge)
+        SourceTrustLevel.OFFICIAL -> bayanString(R.string.trust_official_badge)
+        SourceTrustLevel.VERIFIED -> bayanString(R.string.trust_verified_badge)
+        SourceTrustLevel.GENERAL -> bayanString(R.string.trust_general_badge)
     }
 
     Surface(
@@ -353,7 +418,7 @@ fun SourceTrustBadge(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Verified,
-                contentDescription = stringResource(R.string.cd_verified_source),
+                contentDescription = bayanString(R.string.cd_verified_source),
                 tint = if (onDarkSurface && !isOfficial) Color(0xFF93C5FD) else badgeColor,
                 modifier = Modifier.size(12.dp)
             )
@@ -400,7 +465,7 @@ fun BreakingPulseBadge(modifier: Modifier = Modifier) {
                     .background(bayanColors.accentEmber)
             )
             Text(
-                text = stringResource(R.string.breaking_badge),
+                text = bayanString(R.string.breaking_badge),
                 style = MaterialTheme.typography.labelSmall,
                 color = bayanColors.accentEmber,
                 fontWeight = FontWeight.Bold

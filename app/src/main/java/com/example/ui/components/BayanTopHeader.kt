@@ -34,12 +34,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.AttachMoney
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Engineering
+import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.LocationCity
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Newspaper
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,14 +64,16 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.model.IraqiProvinces
 import com.example.model.NewsCategory
 import com.example.model.ProvinceWeather
+import com.example.ui.LocalAppLanguage
+import com.example.ui.bayanString
 import com.example.ui.theme.LocalBayanColors
 
 @Composable
@@ -86,6 +97,8 @@ fun BayanTopHeader(
     modifier: Modifier = Modifier
 ) {
     val bayanColors = LocalBayanColors.current
+    val language = LocalAppLanguage.current
+    val displayProvince = IraqiProvinces.findByName(selectedProvince).displayName(language)
     val infiniteTransition = rememberInfiniteTransition(label = "refresh_spin")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -131,7 +144,7 @@ fun BayanTopHeader(
                             .testTag("brand_logo")
                     ) {
                         Text(
-                            text = stringResource(R.string.brand_title),
+                            text = bayanString(R.string.brand_title),
                             style = MaterialTheme.typography.displaySmall.copy(fontSize = 24.sp),
                             color = MaterialTheme.colorScheme.onBackground,
                             fontWeight = FontWeight.Black
@@ -143,7 +156,7 @@ fun BayanTopHeader(
                                 .background(bayanColors.glassBorder)
                         )
                         Text(
-                            text = stringResource(R.string.brand_region),
+                            text = bayanString(R.string.brand_region),
                             style = MaterialTheme.typography.titleMedium,
                             color = bayanColors.accentEmber,
                             fontWeight = FontWeight.Bold
@@ -157,6 +170,7 @@ fun BayanTopHeader(
                         color = bayanColors.pillBackground.copy(alpha = 0.9f),
                         border = BorderStroke(1.dp, bayanColors.glassBorder),
                         modifier = Modifier
+                            .weight(1f, fill = false)
                             .minimumInteractiveComponentSize()
                             .testTag("weather_province_pill")
                     ) {
@@ -167,14 +181,14 @@ fun BayanTopHeader(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.LocationOn,
-                                contentDescription = stringResource(R.string.cd_province_pin),
+                                contentDescription = bayanString(R.string.cd_province_pin),
                                 tint = bayanColors.accentEmber,
                                 modifier = Modifier.size(14.dp)
                             )
                             val label = if (weather != null && weather.provinceName == selectedProvince) {
-                                "$selectedProvince ${weather.temperatureCelsius}°"
+                                "$displayProvince ${weather.temperatureCelsius}°"
                             } else {
-                                selectedProvince
+                                displayProvince
                             }
                             Text(
                                 text = label,
@@ -194,7 +208,7 @@ fun BayanTopHeader(
                 ) {
                     HeaderIconCircle(
                         onClick = onRefreshClick,
-                        contentDescription = stringResource(R.string.action_refresh),
+                        contentDescription = bayanString(R.string.action_refresh),
                         testTag = "refresh_button"
                     ) {
                         Icon(
@@ -209,7 +223,7 @@ fun BayanTopHeader(
 
                     HeaderIconCircle(
                         onClick = onSearchToggleClick,
-                        contentDescription = stringResource(R.string.action_search),
+                        contentDescription = bayanString(R.string.action_search),
                         testTag = "search_toggle_button",
                         isActive = isSearchVisible
                     ) {
@@ -223,7 +237,7 @@ fun BayanTopHeader(
 
                     HeaderIconCircle(
                         onClick = onThemeToggleClick,
-                        contentDescription = stringResource(R.string.action_toggle_theme),
+                        contentDescription = bayanString(R.string.action_toggle_theme),
                         testTag = "theme_toggle_button"
                     ) {
                         Icon(
@@ -275,7 +289,7 @@ fun BayanTopHeader(
                         ) {
                             if (searchQuery.isEmpty()) {
                                 Text(
-                                    text = stringResource(R.string.search_placeholder),
+                                    text = bayanString(R.string.search_placeholder),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = bayanColors.mutedText,
                                     maxLines = 1,
@@ -304,7 +318,7 @@ fun BayanTopHeader(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.action_clear_search),
+                                    contentDescription = bayanString(R.string.action_clear_search),
                                     tint = bayanColors.mutedText,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -342,12 +356,23 @@ fun BayanTopHeader(
                                 .minimumInteractiveComponentSize()
                                 .testTag("category_chip_${category.id}")
                         ) {
-                            Text(
-                                text = category.labelAr,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (selected) Color.White else bayanColors.mutedText,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = categoryIcon(category),
+                                    contentDescription = null,
+                                    tint = if (selected) Color.White else bayanColors.accentEmber,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = category.label(language),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (selected) Color.White else bayanColors.mutedText
+                                )
+                            }
                         }
                     }
                 }
@@ -390,4 +415,16 @@ private fun HeaderIconCircle(
             content()
         }
     }
+}
+
+private fun categoryIcon(category: NewsCategory) = when (category) {
+    NewsCategory.ALL -> Icons.Rounded.Newspaper
+    NewsCategory.BREAKING -> Icons.Rounded.LocalFireDepartment
+    NewsCategory.HOLIDAYS -> Icons.Rounded.EventAvailable
+    NewsCategory.DECISIONS_PROD -> Icons.Rounded.AccountBalance
+    NewsCategory.GOVERNORATES -> Icons.Rounded.LocationCity
+    NewsCategory.ECONOMY -> Icons.Rounded.AttachMoney
+    NewsCategory.TECH_PROJECTS -> Icons.Rounded.Engineering
+    NewsCategory.SPORTS -> Icons.Rounded.SportsSoccer
+    NewsCategory.INTERNATIONAL -> Icons.Rounded.Public
 }

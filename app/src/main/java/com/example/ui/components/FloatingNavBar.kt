@@ -35,13 +35,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.BayanTab
+import com.example.ui.bayanString
 import com.example.ui.theme.LocalBayanColors
 
 @Composable
@@ -57,7 +57,7 @@ fun FloatingNavBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
@@ -67,7 +67,7 @@ fun FloatingNavBar(
             tonalElevation = 4.dp,
             border = BorderStroke(1.dp, bayanColors.accentBlue.copy(alpha = 0.25f)),
             modifier = Modifier
-                .widthIn(max = 420.dp)
+                .widthIn(max = 460.dp)
                 .fillMaxWidth()
         ) {
             Row(
@@ -79,7 +79,7 @@ fun FloatingNavBar(
             ) {
                 NavBarItem(
                     tab = BayanTab.HOME,
-                    label = stringResource(R.string.tab_home),
+                    label = bayanString(R.string.tab_home),
                     selectedIcon = Icons.Rounded.Home,
                     unselectedIcon = Icons.Outlined.Home,
                     isSelected = activeTab == BayanTab.HOME,
@@ -88,7 +88,7 @@ fun FloatingNavBar(
                 )
                 NavBarItem(
                     tab = BayanTab.BREAKING,
-                    label = stringResource(R.string.tab_breaking),
+                    label = bayanString(R.string.tab_breaking),
                     selectedIcon = Icons.Rounded.LocalFireDepartment,
                     unselectedIcon = Icons.Outlined.LocalFireDepartment,
                     isSelected = activeTab == BayanTab.BREAKING,
@@ -98,9 +98,9 @@ fun FloatingNavBar(
                 NavBarItem(
                     tab = BayanTab.SAVED,
                     label = if (savedCount > 0) {
-                        "${stringResource(R.string.tab_saved)} ($savedCount)"
+                        "${bayanString(R.string.tab_saved)} ($savedCount)"
                     } else {
-                        stringResource(R.string.tab_saved)
+                        bayanString(R.string.tab_saved)
                     },
                     selectedIcon = Icons.Rounded.Bookmark,
                     unselectedIcon = Icons.Outlined.BookmarkBorder,
@@ -110,7 +110,7 @@ fun FloatingNavBar(
                 )
                 NavBarItem(
                     tab = BayanTab.SETTINGS,
-                    label = stringResource(R.string.tab_settings),
+                    label = bayanString(R.string.tab_settings),
                     selectedIcon = Icons.Rounded.Settings,
                     unselectedIcon = Icons.Outlined.Settings,
                     isSelected = activeTab == BayanTab.SETTINGS,
@@ -158,7 +158,7 @@ private fun NavBarItem(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
             ),
             color = if (isSelected) bayanColors.accentEmber else bayanColors.mutedText,

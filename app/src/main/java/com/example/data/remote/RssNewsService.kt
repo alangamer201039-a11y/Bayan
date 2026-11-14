@@ -2,6 +2,7 @@ package com.example.data.remote
 
 import android.util.Xml
 import androidx.core.text.HtmlCompat
+import com.example.model.AppLanguage
 import com.example.model.FeedEndpoint
 import com.example.model.IraqRelevanceFilter
 import com.example.model.NewsArticle
@@ -29,24 +30,27 @@ class RssNewsService(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+        .build(),
+    private val translationFilter: NewsTranslationFilter = NewsTranslationFilter()
 ) {
     suspend fun fetchCategoryFeed(
         category: NewsCategory,
-        verifiedSourcesOnly: Boolean = true
+        verifiedSourcesOnly: Boolean = true,
+        language: AppLanguage = AppLanguage.ARABIC
     ): List<NewsArticle> = withContext(Dispatchers.IO) {
-        val configuredFeeds = OfficialFeeds.FEEDS[category].orEmpty()
+        val configuredFeeds = OfficialFeeds.unifiedFeedsFor(category)
         val endpoints: List<FeedEndpoint> = if (verifiedSourcesOnly && configuredFeeds.isNotEmpty()) {
             configuredFeeds
         } else {
-            val query = category.rssQuery ?: return@withContext emptyList()
-            val encoded = URLEncoder.encode(query, "UTF-8")
-            listOf(
+            val queries = listOfNotNull(category.rssQuery, category.rssQueryCkb).distinct()
+            val fallbackEndpoints = queries.map { q ->
+                val encoded = URLEncoder.encode(q, "UTF-8")
                 FeedEndpoint(
                     url = "https://news.google.com/rss/search?q=$encoded&hl=ar&gl=IQ&ceid=IQ:ar",
                     filterIraqOnly = true
                 )
-            ) + configuredFeeds
+            }
+            fallbackEndpoints + configuredFeeds
         }
 
         if (endpoints.isEmpty()) return@withContext emptyList()
@@ -54,28 +58,36 @@ class RssNewsService(
         coroutineScope {
             val fetchedLists = endpoints.map { endpoint ->
                 async {
-                    runCatching { fetchAndParseEndpoint(endpoint, category) }.getOrNull().orEmpty()
+                    runCatching { fetchAndParseEndpoint(endpoint, category, language) }.getOrNull().orEmpty()
                 }
             }.awaitAll()
 
             val merged = fetchedLists.flatten()
                 .filter { IraqRelevanceFilter.isRelatedToIraq(it) }
-                .distinctBy { it.title }
+                .distinctBy { it.originalTitle.ifBlank { it.title } }
                 .sortedWith(
                     compareByDescending<NewsArticle> { it.trustLevel == SourceTrustLevel.OFFICIAL }
                         .thenByDescending { it.publishedEpochMs }
                 )
 
-            if (verifiedSourcesOnly) {
+            val filteredTrust = if (verifiedSourcesOnly) {
                 val trusted = merged.filter { it.trustLevel != SourceTrustLevel.GENERAL }
                 trusted.ifEmpty { merged }
             } else {
                 merged
             }
+
+            // Cap per-category candidates to keep translation latency low and UI snappy
+            val candidates = filteredTrust.take(25)
+            translationFilter.translateArticles(candidates, language)
         }
     }
 
-    private fun fetchAndParseEndpoint(endpoint: FeedEndpoint, category: NewsCategory): List<NewsArticle> {
+    private fun fetchAndParseEndpoint(
+        endpoint: FeedEndpoint,
+        category: NewsCategory,
+        language: AppLanguage
+    ): List<NewsArticle> {
         val request = Request.Builder()
             .url(endpoint.url)
             .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) BayanIraqNews/1.0")
@@ -90,7 +102,7 @@ class RssNewsService(
             if (xml.isBlank() || (!xml.startsWith("<") || (!xml.contains("<rss") && !xml.contains("<feed") && !xml.contains("<item")))) {
                 return emptyList()
             }
-            val parsed = parseRssXml(xml, category, endpoint.forcedSource)
+            val parsed = parseRssXml(xml, category, endpoint.forcedSource, language)
             return if (endpoint.filterIraqOnly) {
                 parsed.filter { IraqRelevanceFilter.isRelatedToIraq(it) }
             } else {
@@ -102,7 +114,8 @@ class RssNewsService(
     internal fun parseRssXml(
         xml: String,
         category: NewsCategory,
-        forcedSource: TrustedSource? = null
+        forcedSource: TrustedSource? = null,
+        language: AppLanguage = AppLanguage.ARABIC
     ): List<NewsArticle> {
         val parser = Xml.newPullParser()
         parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
@@ -110,12 +123,18 @@ class RssNewsService(
 
         val articles = mutableListOf<NewsArticle>()
         var insideItem = false
+        var insideItemImage = false
         var rawTitle = ""
         var rawLink = ""
         var rawPubDate = ""
         var rawDescription = ""
+        var rawContentEncoded = ""
         var rawSource = ""
         var rawSourceUrl = ""
+        var rawMediaContentUrl = ""
+        var rawMediaThumbnailUrl = ""
+        var rawEnclosureUrl = ""
+        var rawItemImageUrl = ""
 
         val nowMs = System.currentTimeMillis()
         var eventType = parser.eventType
@@ -125,17 +144,29 @@ class RssNewsService(
                     when (parser.name.lowercase(Locale.ROOT)) {
                         "item", "entry" -> {
                             insideItem = true
+                            insideItemImage = false
                             rawTitle = ""
                             rawLink = ""
                             rawPubDate = ""
                             rawDescription = ""
+                            rawContentEncoded = ""
                             rawSource = ""
                             rawSourceUrl = ""
+                            rawMediaContentUrl = ""
+                            rawMediaThumbnailUrl = ""
+                            rawEnclosureUrl = ""
+                            rawItemImageUrl = ""
                         }
                         "title" -> if (insideItem) rawTitle = safeNextText(parser)
                         "link" -> if (insideItem) {
-                            val href = parser.getAttributeValue(null, "href")
-                            rawLink = if (!href.isNullOrBlank()) href else safeNextText(parser)
+                            val rel = parser.getAttributeValue(null, "rel").orEmpty().lowercase(Locale.ROOT)
+                            val type = parser.getAttributeValue(null, "type").orEmpty().lowercase(Locale.ROOT)
+                            val href = parser.getAttributeValue(null, "href").orEmpty()
+                            if (rel == "enclosure" && (type.startsWith("image/") || isLikelyImageUrl(href))) {
+                                if (rawEnclosureUrl.isBlank()) rawEnclosureUrl = href
+                            } else if (rawLink.isBlank() || rel == "alternate" || rel.isBlank()) {
+                                rawLink = if (href.isNotBlank()) href else safeNextText(parser)
+                            }
                         }
                         "pubdate", "published", "updated" -> if (insideItem && rawPubDate.isBlank()) {
                             rawPubDate = safeNextText(parser)
@@ -143,31 +174,85 @@ class RssNewsService(
                         "description", "summary", "content" -> if (insideItem && rawDescription.isBlank()) {
                             rawDescription = safeNextText(parser)
                         }
+                        "content:encoded" -> if (insideItem && rawContentEncoded.isBlank()) {
+                            rawContentEncoded = safeNextText(parser)
+                        }
                         "source" -> if (insideItem) {
                             rawSourceUrl = parser.getAttributeValue(null, "url").orEmpty()
                             rawSource = safeNextText(parser)
+                        }
+                        "media:content" -> if (insideItem && rawMediaContentUrl.isBlank()) {
+                            val url = parser.getAttributeValue(null, "url").orEmpty()
+                            val medium = parser.getAttributeValue(null, "medium").orEmpty().lowercase(Locale.ROOT)
+                            val type = parser.getAttributeValue(null, "type").orEmpty().lowercase(Locale.ROOT)
+                            val isNonImage = medium == "video" || medium == "audio" ||
+                                type.startsWith("video/") || type.startsWith("audio/")
+                            if (url.isNotBlank() && !isNonImage &&
+                                (medium == "image" || type.startsWith("image/") || isLikelyImageUrl(url) || (medium.isBlank() && type.isBlank()))
+                            ) {
+                                rawMediaContentUrl = url
+                            }
+                        }
+                        "media:thumbnail" -> if (insideItem && rawMediaThumbnailUrl.isBlank()) {
+                            val url = parser.getAttributeValue(null, "url").orEmpty()
+                            if (url.isNotBlank()) rawMediaThumbnailUrl = url
+                        }
+                        "enclosure" -> if (insideItem && rawEnclosureUrl.isBlank()) {
+                            val url = parser.getAttributeValue(null, "url").orEmpty()
+                            val type = parser.getAttributeValue(null, "type").orEmpty().lowercase(Locale.ROOT)
+                            if (url.isNotBlank() && (type.startsWith("image/") || (type.isBlank() && isLikelyImageUrl(url)))) {
+                                rawEnclosureUrl = url
+                            }
+                        }
+                        "itunes:image" -> if (insideItem && rawItemImageUrl.isBlank()) {
+                            val href = parser.getAttributeValue(null, "href").orEmpty()
+                                .ifBlank { parser.getAttributeValue(null, "url").orEmpty() }
+                            if (href.isNotBlank()) rawItemImageUrl = href
+                        }
+                        "image" -> if (insideItem) {
+                            insideItemImage = true
+                            val attrUrl = parser.getAttributeValue(null, "url").orEmpty()
+                                .ifBlank { parser.getAttributeValue(null, "href").orEmpty() }
+                            if (attrUrl.isNotBlank() && rawItemImageUrl.isBlank()) {
+                                rawItemImageUrl = attrUrl
+                            }
+                        }
+                        "url" -> if (insideItem && insideItemImage && rawItemImageUrl.isBlank()) {
+                            rawItemImageUrl = safeNextText(parser)
                         }
                     }
                 }
                 XmlPullParser.END_TAG -> {
                     val tagLower = parser.name.lowercase(Locale.ROOT)
+                    if (tagLower == "image" && insideItemImage) {
+                        insideItemImage = false
+                    }
                     if ((tagLower == "item" || tagLower == "entry") && insideItem) {
                         insideItem = false
+                        insideItemImage = false
                         val normalized = buildArticle(
                             rawTitle = rawTitle,
                             rawLink = rawLink,
                             rawPubDate = rawPubDate,
                             rawDescription = rawDescription,
+                            rawContentEncoded = rawContentEncoded,
                             rawSource = rawSource,
                             rawSourceUrl = rawSourceUrl,
+                            rawImageCandidates = listOf(
+                                rawMediaContentUrl,
+                                rawEnclosureUrl,
+                                rawMediaThumbnailUrl,
+                                rawItemImageUrl
+                            ),
                             category = category,
                             forcedSource = forcedSource,
+                            language = language,
                             nowMs = nowMs
                         )
                         if (normalized != null) {
                             articles.add(normalized)
                         }
-                        if (articles.size >= 20) break
+                        if (articles.size >= 15) break
                     }
                 }
             }
@@ -189,16 +274,20 @@ class RssNewsService(
         rawLink: String,
         rawPubDate: String,
         rawDescription: String,
+        rawContentEncoded: String,
         rawSource: String,
         rawSourceUrl: String,
+        rawImageCandidates: List<String>,
         category: NewsCategory,
         forcedSource: TrustedSource?,
+        language: AppLanguage,
         nowMs: Long
     ): NewsArticle? {
         var cleanTitle = stripHtml(rawTitle)
         if (cleanTitle.isBlank()) return null
 
-        var source = forcedSource?.nameAr ?: stripHtml(rawSource).ifBlank { "مصدر إخباري" }
+        val defaultSourceLabel = if (language == AppLanguage.KURDISH) "سەرچاوەی هەواڵ" else "مصدر إخباري"
+        var source = forcedSource?.displayName(language) ?: stripHtml(rawSource).ifBlank { defaultSourceLabel }
         val separatorIdx = cleanTitle.lastIndexOf(" - ")
         if (separatorIdx > 0) {
             val extractedSource = cleanTitle.substring(separatorIdx + 3).trim()
@@ -210,15 +299,19 @@ class RssNewsService(
             }
         }
 
-        var cleanDesc = stripHtml(rawDescription)
+        val descriptionHtml = rawDescription.ifBlank { rawContentEncoded }
+        var cleanDesc = stripHtml(descriptionHtml)
         if (cleanDesc.startsWith(cleanTitle)) {
             cleanDesc = cleanDesc.removePrefix(cleanTitle).trim()
         }
         if (cleanDesc.endsWith(source)) {
             cleanDesc = cleanDesc.removeSuffix(source).trim()
         }
+        val detectedSourceLang = NewsTranslationFilter.detectLanguage("$cleanTitle $cleanDesc")
         val summary = if (cleanDesc.length > 24) {
             cleanDesc
+        } else if (detectedSourceLang == AppLanguage.KURDISH) {
+            "وردەکاری تەواوی هەواڵەکە لە سەرچاوە فەرمییەکە بەردەستە: $source"
         } else {
             "تفاصيل الخبر كاملة متوفرة عبر المصدر الرسمي: $source"
         }
@@ -228,6 +321,18 @@ class RssNewsService(
         } else {
             TrustedSources.classify(source, rawSourceUrl, rawLink)
         }
+
+        val htmlImageCandidates = extractImageUrlsFromHtml(rawContentEncoded) +
+            extractImageUrlsFromHtml(rawDescription)
+        val imageUrl = (rawImageCandidates + htmlImageCandidates)
+            .firstNotNullOfOrNull { candidate ->
+                normalizeImageUrl(
+                    candidate = candidate,
+                    articleLink = rawLink,
+                    sourceUrl = rawSourceUrl,
+                    fallbackDomain = sourceDomain
+                )
+            }
 
         val publishedMs = parseRssDate(rawPubDate) ?: (nowMs - 45L * 60_000L)
         val ageMinutes = ((nowMs - publishedMs) / 60_000L).coerceAtLeast(1L)
@@ -246,7 +351,85 @@ class RssNewsService(
             title = cleanTitle,
             summary = summary,
             link = rawLink.trim(),
-            isSaved = false
+            imageUrl = imageUrl,
+            isSaved = false,
+            languageCode = detectedSourceLang.code,
+            originalTitle = cleanTitle,
+            originalSummary = summary,
+            originalLanguageCode = detectedSourceLang.code
+        )
+    }
+
+    private fun extractImageUrlsFromHtml(html: String): List<String> {
+        if (html.isBlank()) return emptyList()
+        return imgSrcRegex.findAll(html)
+            .mapNotNull { match -> match.groupValues.getOrNull(1)?.trim() }
+            .toList()
+    }
+
+    private fun normalizeImageUrl(
+        candidate: String,
+        articleLink: String,
+        sourceUrl: String,
+        fallbackDomain: String
+    ): String? {
+        val unescaped = candidate
+            .replace("&amp;", "&")
+            .trim()
+        if (unescaped.isBlank()) return null
+
+        val lower = unescaped.lowercase(Locale.ROOT)
+        if (lower.startsWith("data:") || lower.startsWith("javascript:") || lower.startsWith("cid:")) {
+            return null
+        }
+
+        val resolved = when {
+            lower.startsWith("https://") || lower.startsWith("http://") -> unescaped
+            unescaped.startsWith("//") -> "https:$unescaped"
+            unescaped.startsWith("/") -> {
+                val baseOrigin = extractOrigin(articleLink)
+                    ?: extractOrigin(sourceUrl)
+                    ?: fallbackDomain.takeIf { it.isNotBlank() }?.let { "https://$it" }
+                if (baseOrigin != null) "$baseOrigin$unescaped" else return null
+            }
+            else -> return null
+        }
+
+        val resolvedLower = resolved.lowercase(Locale.ROOT)
+        if (nonContentImageMarkers.any { resolvedLower.contains(it) }) {
+            return null
+        }
+        return resolved
+    }
+
+    private fun extractOrigin(url: String): String? {
+        val trimmed = url.trim()
+        val schemeIdx = trimmed.indexOf("://")
+        if (schemeIdx <= 0) return null
+        val afterScheme = trimmed.substring(schemeIdx + 3)
+        val host = afterScheme.substringBefore("/").substringBefore("?")
+        if (host.isBlank() || !host.contains(".")) return null
+        val scheme = trimmed.substring(0, schemeIdx).lowercase(Locale.ROOT)
+        return "$scheme://$host"
+    }
+
+    private fun isLikelyImageUrl(url: String): Boolean {
+        val lower = url.lowercase(Locale.ROOT).substringBefore("?").substringBefore("#")
+        return lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
+            lower.endsWith(".png") || lower.endsWith(".webp") ||
+            lower.endsWith(".avif") || lower.endsWith(".gif") ||
+            lower.contains("/image") || lower.contains("/img") || lower.contains("/media")
+    }
+
+    companion object {
+        private val imgSrcRegex = Regex(
+            """<img\b[^>]*?\b(?:src|data-src|data-original|data-lazy-src)\s*=\s*["']([^"']+)["']""",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val nonContentImageMarkers = listOf(
+            ".svg", "1x1", "/pixel", "pixel.", "spacer.", "blank.gif",
+            "transparent.", "favicon", "doubleclick.net", "scorecardresearch.com"
         )
     }
 

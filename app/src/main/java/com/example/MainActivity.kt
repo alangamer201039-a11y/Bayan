@@ -28,20 +28,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.model.AppLanguage
 import com.example.model.BayanTab
 import com.example.ui.BayanUiState
 import com.example.ui.BayanViewModel
+import com.example.ui.LocalAppLanguage
+import com.example.ui.LocalLocalizedResources
 import com.example.ui.components.ArticleDetailSheet
 import com.example.ui.components.BayanTopHeader
 import com.example.ui.components.FloatingNavBar
+import com.example.ui.resourcesForLanguage
 import com.example.ui.screens.NewsFeedScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.BayanTheme
@@ -76,7 +82,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            val context = LocalContext.current
+            val localizedResources = remember(uiState.language, context) {
+                context.resourcesForLanguage(uiState.language)
+            }
+
+            CompositionLocalProvider(
+                LocalLayoutDirection provides LayoutDirection.Rtl,
+                LocalAppLanguage provides uiState.language,
+                LocalLocalizedResources provides localizedResources
+            ) {
                 BayanTheme(darkTheme = uiState.isDarkTheme) {
                     BayanApp(
                         uiState = uiState,
@@ -88,12 +103,16 @@ class MainActivity : ComponentActivity() {
                         onClearSearch = viewModel::clearSearch,
                         onToggleTheme = viewModel::toggleTheme,
                         onSelectProvince = viewModel::selectProvince,
+                        onSelectLanguage = viewModel::selectLanguage,
                         onSelectFontSize = viewModel::selectFontSize,
                         onVerifiedSourcesToggle = viewModel::setVerifiedSourcesOnly,
                         onAutoRefreshToggle = viewModel::setAutoRefreshEnabled,
                         onOpenArticle = viewModel::openArticle,
                         onCloseArticle = viewModel::closeArticle,
                         onToggleSave = viewModel::toggleSaveArticle,
+                        onLocateGranted = { viewModel.detectLocationAndRefreshWeather(userInitiated = true) },
+                        onLocationPermissionDenied = viewModel::onLocationPermissionDenied,
+                        onRefreshWeather = viewModel::refreshWeather,
                         onClearToast = viewModel::clearToastMessage
                     )
                 }
@@ -113,12 +132,16 @@ fun BayanApp(
     onClearSearch: () -> Unit,
     onToggleTheme: () -> Unit,
     onSelectProvince: (String) -> Unit,
+    onSelectLanguage: (AppLanguage) -> Unit,
     onSelectFontSize: (com.example.model.ReadingFontSize) -> Unit,
     onVerifiedSourcesToggle: (Boolean) -> Unit,
     onAutoRefreshToggle: (Boolean) -> Unit,
     onOpenArticle: (com.example.model.NewsArticle) -> Unit,
     onCloseArticle: () -> Unit,
     onToggleSave: (com.example.model.NewsArticle) -> Unit,
+    onLocateGranted: () -> Unit,
+    onLocationPermissionDenied: () -> Unit,
+    onRefreshWeather: () -> Unit,
     onClearToast: () -> Unit
 ) {
     val bayanColors = LocalBayanColors.current
@@ -181,31 +204,47 @@ fun BayanApp(
                     BayanTab.SETTINGS -> {
                         SettingsScreen(
                             selectedProvince = uiState.selectedProvince,
+                            selectedLanguage = uiState.language,
                             weather = uiState.weather,
                             fontSize = uiState.fontSize,
                             isDarkTheme = uiState.isDarkTheme,
                             verifiedSourcesOnly = uiState.verifiedSourcesOnly,
                             autoRefreshEnabled = uiState.autoRefreshEnabled,
                             onProvinceSelected = onSelectProvince,
+                            onLanguageSelected = onSelectLanguage,
                             onFontSizeSelected = onSelectFontSize,
                             onThemeSelected = { dark ->
                                 if (dark != uiState.isDarkTheme) onToggleTheme()
                             },
                             onVerifiedSourcesToggle = onVerifiedSourcesToggle,
-                            onAutoRefreshToggle = onAutoRefreshToggle
+                            onAutoRefreshToggle = onAutoRefreshToggle,
+                            isWeatherLoading = uiState.isWeatherLoading,
+                            isDetectingLocation = uiState.isDetectingLocation,
+                            onLocateGranted = onLocateGranted,
+                            onLocationPermissionDenied = onLocationPermissionDenied,
+                            onRefreshWeather = onRefreshWeather
                         )
                     }
 
                     else -> {
                         NewsFeedScreen(
                             activeTab = uiState.activeTab,
+                            selectedCategory = uiState.selectedCategory,
                             articles = uiState.filteredArticles,
                             isLoading = uiState.isLoading,
                             hasLoadError = uiState.hasLoadError,
                             searchQuery = uiState.searchQuery,
                             onRefresh = onRefresh,
                             onArticleClick = onOpenArticle,
-                            onToggleSave = onToggleSave
+                            onToggleSave = onToggleSave,
+                            weather = uiState.weather,
+                            selectedProvince = uiState.selectedProvince,
+                            isWeatherLoading = uiState.isWeatherLoading,
+                            isDetectingLocation = uiState.isDetectingLocation,
+                            onLocateGranted = onLocateGranted,
+                            onLocationPermissionDenied = onLocationPermissionDenied,
+                            onRefreshWeather = onRefreshWeather,
+                            onProvinceClick = { onSelectTab(BayanTab.SETTINGS) }
                         )
                     }
                 }

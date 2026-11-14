@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.model.AppLanguage
 import com.example.model.ReadingFontSize
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -18,7 +19,8 @@ data class UserPreferences(
     val isDarkTheme: Boolean = true,
     val fontSize: ReadingFontSize = ReadingFontSize.MEDIUM,
     val verifiedSourcesOnly: Boolean = true,
-    val autoRefreshEnabled: Boolean = true
+    val autoRefreshEnabled: Boolean = true,
+    val language: AppLanguage = AppLanguage.ARABIC
 )
 
 class UserPreferencesRepository(private val context: Context) {
@@ -28,6 +30,7 @@ class UserPreferencesRepository(private val context: Context) {
         val FONT_SIZE = stringPreferencesKey("font_size")
         val VERIFIED_SOURCES_ONLY = booleanPreferencesKey("verified_sources_only")
         val AUTO_REFRESH_ENABLED = booleanPreferencesKey("auto_refresh_enabled")
+        val APP_LANGUAGE = stringPreferencesKey("app_language")
     }
 
     val userPreferences: Flow<UserPreferences> = context.bayanPrefsDataStore.data.map { prefs ->
@@ -36,7 +39,8 @@ class UserPreferencesRepository(private val context: Context) {
             isDarkTheme = prefs[Keys.IS_DARK_THEME] ?: true,
             fontSize = ReadingFontSize.fromKey(prefs[Keys.FONT_SIZE] ?: ReadingFontSize.MEDIUM.key),
             verifiedSourcesOnly = prefs[Keys.VERIFIED_SOURCES_ONLY] ?: true,
-            autoRefreshEnabled = prefs[Keys.AUTO_REFRESH_ENABLED] ?: true
+            autoRefreshEnabled = prefs[Keys.AUTO_REFRESH_ENABLED] ?: true,
+            language = AppLanguage.fromCode(prefs[Keys.APP_LANGUAGE] ?: AppLanguage.ARABIC.code)
         )
     }
 
@@ -67,6 +71,12 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun setAutoRefreshEnabled(enabled: Boolean) {
         context.bayanPrefsDataStore.edit { prefs ->
             prefs[Keys.AUTO_REFRESH_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setLanguage(language: AppLanguage) {
+        context.bayanPrefsDataStore.edit { prefs ->
+            prefs[Keys.APP_LANGUAGE] = language.code
         }
     }
 }

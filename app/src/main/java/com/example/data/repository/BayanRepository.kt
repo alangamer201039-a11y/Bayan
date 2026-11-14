@@ -4,9 +4,11 @@ import com.example.data.local.ArticleDao
 import com.example.data.local.ArticleEntity
 import com.example.data.local.UserPreferences
 import com.example.data.local.UserPreferencesRepository
+import com.example.data.remote.NewsTranslationFilter
 import com.example.data.remote.OpenMeteoApi
 import com.example.data.remote.RssNewsService
 import com.example.data.remote.WeatherClient
+import com.example.model.AppLanguage
 import com.example.model.IraqiProvince
 import com.example.model.NewsArticle
 import com.example.model.NewsCategory
@@ -23,7 +25,8 @@ import kotlin.math.roundToInt
 class BayanRepository(
     private val articleDao: ArticleDao,
     private val prefsRepo: UserPreferencesRepository,
-    private val rssService: RssNewsService = RssNewsService(),
+    private val translationFilter: NewsTranslationFilter = NewsTranslationFilter(),
+    private val rssService: RssNewsService = RssNewsService(translationFilter = translationFilter),
     private val weatherApi: OpenMeteoApi = WeatherClient.api
 ) {
     val userPreferences: Flow<UserPreferences> = prefsRepo.userPreferences
@@ -38,7 +41,13 @@ class BayanRepository(
         return try {
             val prefs = prefsRepo.userPreferences.first()
             val targetCategories = if (category == NewsCategory.ALL) {
-                listOf(NewsCategory.BREAKING, NewsCategory.GOVERNORATES, NewsCategory.ECONOMY)
+                listOf(
+                    NewsCategory.BREAKING,
+                    NewsCategory.HOLIDAYS,
+                    NewsCategory.DECISIONS_PROD,
+                    NewsCategory.GOVERNORATES,
+                    NewsCategory.ECONOMY
+                )
             } else {
                 listOf(category)
             }
@@ -49,7 +58,8 @@ class BayanRepository(
                         runCatching {
                             rssService.fetchCategoryFeed(
                                 category = cat,
-                                verifiedSourcesOnly = prefs.verifiedSourcesOnly
+                                verifiedSourcesOnly = prefs.verifiedSourcesOnly,
+                                language = prefs.language
                             )
                         }.getOrNull().orEmpty()
                     }
@@ -63,6 +73,7 @@ class BayanRepository(
             val savedIds = articleDao.getSavedArticleIds().toSet()
             val nowMs = System.currentTimeMillis()
             val deduplicated = fetched
+                .distinctBy { it.id }
                 .distinctBy { it.title }
                 .map { article ->
                     ArticleEntity.fromDomain(
@@ -76,6 +87,22 @@ class BayanRepository(
             Result.success(deduplicated.size)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun retranslateCachedArticles(targetLanguage: AppLanguage) {
+        val current = allArticles.first()
+        val needingTranslation = current.filter { it.languageCode != targetLanguage.code }
+        if (needingTranslation.isEmpty()) return
+
+        val translated = translationFilter.translateArticles(needingTranslation, targetLanguage)
+        translated.forEach { updated ->
+            articleDao.updateTranslatedContent(
+                id = updated.id,
+                title = updated.title,
+                summary = updated.summary,
+                languageCode = updated.languageCode
+            )
         }
     }
 
@@ -93,15 +120,35 @@ class BayanRepository(
         return nextSaved
     }
 
-    suspend fun fetchWeather(province: IraqiProvince): ProvinceWeather? {
+    suspend fun fetchWeather(province: IraqiProvince): ProvinceWeather? =
+        fetchWeatherByCoordinates(
+            latitude = province.lat,
+            longitude = province.lon,
+            provinceName = province.nameAr,
+            isFromGpsLocation = false
+        )
+
+    suspend fun fetchWeatherByCoordinates(
+        latitude: Double,
+        longitude: Double,
+        provinceName: String,
+        isFromGpsLocation: Boolean
+    ): ProvinceWeather? {
         return try {
-            val response = weatherApi.getCurrentWeather(province.lat, province.lon)
-            val temp = response.current?.temperature2m?.roundToInt() ?: return null
-            val condition = WeatherClient.weatherCodeToArabic(response.current.weatherCode)
+            val response = weatherApi.getCurrentWeather(latitude, longitude)
+            val current = response.current
+            val temp = current?.temperature2m?.roundToInt() ?: return null
+            val condition = WeatherClient.weatherCodeToArabic(current.weatherCode)
             ProvinceWeather(
-                provinceName = province.nameAr,
+                provinceName = provinceName,
                 temperatureCelsius = temp,
-                conditionAr = condition
+                conditionAr = condition,
+                weatherCode = current.weatherCode,
+                apparentTempCelsius = current.apparentTemperature?.roundToInt(),
+                humidityPercent = current.relativeHumidity2m,
+                windSpeedKmh = current.windSpeed10m?.roundToInt(),
+                isDay = (current.isDay ?: 1) == 1,
+                isFromGpsLocation = isFromGpsLocation
             )
         } catch (_: Exception) {
             null
@@ -126,5 +173,9 @@ class BayanRepository(
 
     suspend fun setAutoRefreshEnabled(enabled: Boolean) {
         prefsRepo.setAutoRefreshEnabled(enabled)
+    }
+
+    suspend fun setLanguage(language: AppLanguage) {
+        prefsRepo.setLanguage(language)
     }
 }

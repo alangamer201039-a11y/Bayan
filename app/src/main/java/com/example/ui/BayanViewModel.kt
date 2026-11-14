@@ -453,11 +453,12 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openArticle(article: NewsArticle) {
         val needsFullText = article.fullContent.isNullOrBlank() && article.link.isNotBlank()
+        val needsEnrichment = (article.fullContent.isNullOrBlank() || article.imageUrl.isNullOrBlank()) && article.link.isNotBlank()
         transient.value = transient.value.copy(
             openedArticleId = article.id,
             isFullArticleLoading = needsFullText
         )
-        if (needsFullText) {
+        if (needsEnrichment) {
             val targetLanguage = uiState.value.language
             viewModelScope.launch {
                 repository.fetchAndCacheFullArticle(article, targetLanguage)

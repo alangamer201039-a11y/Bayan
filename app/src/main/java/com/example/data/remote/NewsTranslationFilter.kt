@@ -556,6 +556,11 @@ class NewsTranslationFilter(
                 arabicVariants = listOf("وكالة الأنباء العراقية (واع)")
             ),
             OfficialTermPair(
+                arabic = "آڤا ميديا",
+                kurdish = "ئاڤا میدیا",
+                arabicVariants = listOf("AVA Media", "آفا ميديا")
+            ),
+            OfficialTermPair(
                 arabic = "البنك المركزي العراقي",
                 kurdish = "بانکی ناوەندی عێراق"
             ),

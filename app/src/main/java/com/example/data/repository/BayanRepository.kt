@@ -128,32 +128,42 @@ class BayanRepository(
             )
         }.getOrNull() ?: return null
 
-        if (extracted.fullText.isBlank()) return null
+        if (extracted.fullText.isBlank() && extracted.imageUrl.isNullOrBlank()) return null
 
-        val detectedSourceLang = NewsTranslationFilter.detectLanguage(extracted.fullText)
+        val hasNewText = extracted.fullText.isNotBlank()
+        val bestFullRaw = if (hasNewText && (article.originalFullContent.isNullOrBlank() || extracted.fullText.length > article.originalFullContent.length)) {
+            extracted.fullText
+        } else {
+            article.originalFullContent ?: article.fullContent
+        }
+        val detectedSourceLang = if (!bestFullRaw.isNullOrBlank()) {
+            NewsTranslationFilter.detectLanguage(bestFullRaw)
+        } else {
+            AppLanguage.fromCode(article.originalLanguageCode)
+        }
         val rawOriginalSummary = article.originalSummary.ifBlank { extracted.leadSummary }
         val enrichedRaw = article.copy(
             summary = article.summary.ifBlank { extracted.leadSummary },
-            fullContent = extracted.fullText,
+            fullContent = bestFullRaw,
             originalSummary = rawOriginalSummary,
-            originalFullContent = extracted.fullText,
+            originalFullContent = bestFullRaw,
             originalLanguageCode = detectedSourceLang.code,
             imageUrl = article.imageUrl ?: extracted.imageUrl
         )
         val translated = translationFilter.translateArticle(enrichedRaw, targetLanguage)
-        val finalFull = translated.fullContent ?: extracted.fullText
+        val finalFull = translated.fullContent ?: bestFullRaw.orEmpty()
 
         articleDao.updateFullContent(
             id = translated.id,
             summary = translated.summary,
             fullContent = finalFull,
             originalSummary = translated.originalSummary,
-            originalFullContent = extracted.fullText,
+            originalFullContent = bestFullRaw.orEmpty(),
             originalLanguageCode = detectedSourceLang.code,
             languageCode = translated.languageCode,
             imageUrl = translated.imageUrl
         )
-        return translated.copy(fullContent = finalFull)
+        return translated.copy(fullContent = finalFull.ifBlank { article.fullContent })
     }
 
     suspend fun toggleSave(article: NewsArticle): Boolean {

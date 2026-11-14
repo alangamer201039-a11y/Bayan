@@ -40,7 +40,10 @@ data class ArticleEntity(
         title = title,
         summary = summary,
         link = link,
-        imageUrl = imageUrl,
+        imageUrl = com.example.data.remote.ArticleContentFetcher.sanitizeArticleImageUrl(
+            url = imageUrl,
+            allowLocalResource = true
+        ),
         fullContent = fullContent,
         isSaved = isSaved,
         languageCode = languageCode,

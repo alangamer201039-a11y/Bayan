@@ -106,7 +106,15 @@ fun BayanNewsImage(
             contentDescription = contentDescription,
             contentScale = contentScale,
             onLoading = { isLoading = true },
-            onSuccess = { isLoading = false },
+            onSuccess = { state ->
+                val intrinsic = state.painter.intrinsicSize
+                val isTinyPixel = (intrinsic.width.isFinite() && intrinsic.width in 0f..40f) ||
+                    (intrinsic.height.isFinite() && intrinsic.height in 0f..40f)
+                isLoading = false
+                if (isTinyPixel) {
+                    onLoadFailed()
+                }
+            },
             onError = {
                 isLoading = false
                 onLoadFailed()

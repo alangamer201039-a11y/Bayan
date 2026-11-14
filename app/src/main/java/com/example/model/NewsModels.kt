@@ -294,6 +294,15 @@ object TrustedSources {
             languageScope = AppLanguage.KURDISH
         ),
         TrustedSource(
+            id = "ava_media",
+            nameAr = "آڤا ميديا (AVA Media)",
+            nameCkb = "ئاڤا میدیا (AVA Media)",
+            domain = "ava.news",
+            trustLevel = SourceTrustLevel.OFFICIAL,
+            aliases = listOf("ava media", "ava news", "ava.news", "آڤا ميديا", "ئاڤا میدیا", "ئاڤا", "آفا ميديا"),
+            directRssUrl = "https://news.google.com/rss/search?q=site:ava.news&hl=ckb&gl=IQ&ceid=IQ:ckb"
+        ),
+        TrustedSource(
             id = "rudaw",
             nameAr = "شبكة رووداو الإعلامية (عربي)",
             nameCkb = "تۆڕی میدیایی ڕووداو (عەرەبی)",
@@ -394,7 +403,7 @@ object TrustedSources {
         return if (language == AppLanguage.KURDISH) {
             scoped.sortedWith(
                 compareByDescending<TrustedSource> {
-                    it.id in setOf("krg_dmi", "rudaw_sorani", "kurdistan24_sorani", "shafaq")
+                    it.id in setOf("krg_dmi", "ava_media", "rudaw_sorani", "kurdistan24_sorani", "shafaq")
                 }.thenByDescending { it.trustLevel == SourceTrustLevel.OFFICIAL }
             )
         } else {
@@ -403,13 +412,13 @@ object TrustedSources {
     }
 
     val officialMinistriesSitesQuery: String =
-        "(site:ina.iq OR site:cabinet.iq OR site:pmo.iq OR site:alsabaah.iq OR site:gov.iq OR site:gov.krd OR site:krg.org OR site:epedu.gov.iq OR site:moedu.gov.iq OR site:industry.gov.iq OR site:zeraa.gov.iq OR site:moelc.gov.iq OR site:moch.gov.iq OR site:oil.gov.iq OR site:cbi.iq OR site:mof.gov.iq OR site:moh.gov.iq OR site:moi.gov.iq OR site:mofa.gov.iq OR site:mohesr.gov.iq OR site:moc.gov.iq OR site:moys.gov.iq OR site:parliament.iq)"
+        "(site:ina.iq OR site:cabinet.iq OR site:pmo.iq OR site:alsabaah.iq OR site:gov.iq OR site:gov.krd OR site:krg.org OR site:ava.news OR site:epedu.gov.iq OR site:moedu.gov.iq OR site:industry.gov.iq OR site:zeraa.gov.iq OR site:moelc.gov.iq OR site:moch.gov.iq OR site:oil.gov.iq OR site:cbi.iq OR site:mof.gov.iq OR site:moh.gov.iq OR site:moi.gov.iq OR site:mofa.gov.iq OR site:mohesr.gov.iq OR site:moc.gov.iq OR site:moys.gov.iq OR site:parliament.iq)"
 
     val trustedSiteFilterQuery: String =
-        "(site:ina.iq OR site:cabinet.iq OR site:pmo.iq OR site:alsabaah.iq OR site:gov.iq OR site:gov.krd OR site:krg.org OR site:epedu.gov.iq OR site:moedu.gov.iq OR site:industry.gov.iq OR site:zeraa.gov.iq OR site:moelc.gov.iq OR site:moch.gov.iq OR site:oil.gov.iq OR site:cbi.iq OR site:mof.gov.iq OR site:moh.gov.iq OR site:moi.gov.iq OR site:mofa.gov.iq OR site:mohesr.gov.iq OR site:moc.gov.iq OR site:moys.gov.iq OR site:parliament.iq OR site:shafaq.com OR site:alsumaria.tv OR site:alsharqiya.com OR site:rudawarabia.net OR site:rudaw.net OR site:kurdistan24.net OR site:aljazeera.net OR site:skynewsarabia.com OR site:bbc.com OR site:france24.com OR site:alarabiya.net)"
+        "(site:ina.iq OR site:cabinet.iq OR site:pmo.iq OR site:alsabaah.iq OR site:gov.iq OR site:gov.krd OR site:krg.org OR site:ava.news OR site:epedu.gov.iq OR site:moedu.gov.iq OR site:industry.gov.iq OR site:zeraa.gov.iq OR site:moelc.gov.iq OR site:moch.gov.iq OR site:oil.gov.iq OR site:cbi.iq OR site:mof.gov.iq OR site:moh.gov.iq OR site:moi.gov.iq OR site:mofa.gov.iq OR site:mohesr.gov.iq OR site:moc.gov.iq OR site:moys.gov.iq OR site:parliament.iq OR site:shafaq.com OR site:alsumaria.tv OR site:alsharqiya.com OR site:rudawarabia.net OR site:rudaw.net OR site:kurdistan24.net OR site:aljazeera.net OR site:skynewsarabia.com OR site:bbc.com OR site:france24.com OR site:alarabiya.net)"
 
     val kurdishTrustedSitesQuery: String =
-        "(site:gov.krd OR site:krg.org OR site:rudaw.net/sorani OR site:rudaw.net OR site:kurdistan24.net/ckb OR site:kurdistan24.net OR site:shafaq.com/ku)"
+        "(site:gov.krd OR site:krg.org OR site:ava.news OR site:rudaw.net/sorani OR site:rudaw.net OR site:kurdistan24.net/ckb OR site:kurdistan24.net OR site:shafaq.com/ku)"
 
     fun findMatch(
         sourceName: String,
@@ -484,9 +493,17 @@ data class FeedEndpoint(
 )
 
 object OfficialFeeds {
+    const val AVA_MEDIA_GOOGLE_NEWS_RSS =
+        "https://news.google.com/rss/search?q=site:ava.news&hl=ckb&gl=IQ&ceid=IQ:ckb"
+
     private fun gn(query: String): String {
         val encoded = java.net.URLEncoder.encode(query, "UTF-8")
         return "https://news.google.com/rss/search?q=$encoded&hl=ar&gl=IQ&ceid=IQ:ar"
+    }
+
+    private fun gnCkb(query: String): String {
+        val encoded = java.net.URLEncoder.encode(query, "UTF-8")
+        return "https://news.google.com/rss/search?q=$encoded&hl=ckb&gl=IQ&ceid=IQ:ckb"
     }
 
     private val inaSource = TrustedSources.all.first { it.id == "ina" }
@@ -496,6 +513,7 @@ object OfficialFeeds {
     private val rudawSoraniSource = TrustedSources.all.first { it.id == "rudaw_sorani" }
     private val kurdistan24Source = TrustedSources.all.first { it.id == "kurdistan24" }
     private val kurdistan24SoraniSource = TrustedSources.all.first { it.id == "kurdistan24_sorani" }
+    private val avaMediaSource = TrustedSources.all.first { it.id == "ava_media" }
     private val shafaqSource = TrustedSources.all.first { it.id == "shafaq" }
     private val aljazeeraSource = TrustedSources.all.first { it.id == "aljazeera" }
     private val skynewsSource = TrustedSources.all.first { it.id == "skynews" }
@@ -506,9 +524,10 @@ object OfficialFeeds {
             FeedEndpoint(url = "https://alsabaah.iq/rss.xml", forcedSource = alsabaahSource, filterIraqOnly = true),
             FeedEndpoint(url = rudawSource.directRssUrl!!, forcedSource = rudawSource, filterIraqOnly = true),
             FeedEndpoint(url = kurdistan24Source.directRssUrl!!, forcedSource = kurdistan24Source, filterIraqOnly = true),
+            FeedEndpoint(url = AVA_MEDIA_GOOGLE_NEWS_RSS, forcedSource = avaMediaSource, filterIraqOnly = true),
             FeedEndpoint(url = gn("العراق site:ina.iq"), filterIraqOnly = true),
             FeedEndpoint(url = gn("العراق ${TrustedSources.officialMinistriesSitesQuery}"), filterIraqOnly = true),
-            FeedEndpoint(url = gn("(إقليم كردستان OR أربيل OR السليمانية OR دهوك OR حلبجة OR حكومة إقليم كردستان) (site:gov.krd OR site:rudawarabia.net OR site:kurdistan24.net OR site:shafaq.com)"), filterIraqOnly = true),
+            FeedEndpoint(url = gn("(إقليم كردستان OR أربيل OR السليمانية OR دهوك OR حلبجة OR حكومة إقليم كردستان) (site:gov.krd OR site:ava.news OR site:rudawarabia.net OR site:kurdistan24.net OR site:shafaq.com)"), filterIraqOnly = true),
             FeedEndpoint(url = gn("العراق ${TrustedSources.trustedSiteFilterQuery}"), filterIraqOnly = true),
             FeedEndpoint(url = aljazeeraSource.directRssUrl!!, forcedSource = aljazeeraSource, filterIraqOnly = true),
             FeedEndpoint(url = skynewsSource.directRssUrl!!, forcedSource = skynewsSource, filterIraqOnly = true)
@@ -523,7 +542,7 @@ object OfficialFeeds {
                 filterIraqOnly = true
             ),
             FeedEndpoint(
-                url = gn("(عطلة رسمية OR تعطيل الدوام OR العطل الرسمية OR إجازة رسمية) (إقليم كردستان OR حكومة إقليم كردستان OR أربيل OR السليمانية OR دهوك OR حلبجة OR دائرة الإعلام والمعلومات) (site:gov.krd OR site:krg.org OR site:rudawarabia.net OR site:kurdistan24.net OR site:shafaq.com)"),
+                url = gn("(عطلة رسمية OR تعطيل الدوام OR العطل الرسمية OR إجازة رسمية) (إقليم كردستان OR حكومة إقليم كردستان OR أربيل OR السليمانية OR دهوك OR حلبجة OR دائرة الإعلام والمعلومات) (site:gov.krd OR site:krg.org OR site:ava.news OR site:rudawarabia.net OR site:kurdistan24.net OR site:shafaq.com)"),
                 filterIraqOnly = true
             ),
             FeedEndpoint(
@@ -537,7 +556,7 @@ object OfficialFeeds {
                 filterIraqOnly = true
             ),
             FeedEndpoint(
-                url = gn("(حكومة إقليم كردستان OR دائرة الإعلام والمعلومات OR مجلس وزراء الإقليم OR مشاريع أربيل) (site:gov.krd OR site:krg.org OR site:rudawarabia.net OR site:kurdistan24.net OR site:ina.iq)"),
+                url = gn("(حكومة إقليم كردستان OR دائرة الإعلام والمعلومات OR مجلس وزراء الإقليم OR مشاريع أربيل) (site:gov.krd OR site:krg.org OR site:ava.news OR site:rudawarabia.net OR site:kurdistan24.net OR site:ina.iq)"),
                 filterIraqOnly = true
             ),
             FeedEndpoint(
@@ -553,12 +572,13 @@ object OfficialFeeds {
             FeedEndpoint(url = "https://www.ina.iq/rss.xml", forcedSource = inaSource, filterIraqOnly = true),
             FeedEndpoint(url = rudawSource.directRssUrl!!, forcedSource = rudawSource, filterIraqOnly = true),
             FeedEndpoint(url = kurdistan24Source.directRssUrl!!, forcedSource = kurdistan24Source, filterIraqOnly = true),
+            FeedEndpoint(url = AVA_MEDIA_GOOGLE_NEWS_RSS, forcedSource = avaMediaSource, filterIraqOnly = true),
             FeedEndpoint(
-                url = gn("(بغداد OR البصرة OR أربيل OR الموصل OR نينوى OR صلاح الدين OR النجف OR كربلاء OR كركوك OR الأنبار OR السليمانية OR بابل OR ذي قار OR ديالى OR واسط OR ميسان OR المثنى OR الديوانية OR دهوك OR حلبجة) (site:ina.iq OR site:alsabaah.iq OR site:pmo.iq OR site:cabinet.iq OR site:gov.iq OR site:gov.krd)"),
+                url = gn("(بغداد OR البصرة OR أربيل OR الموصل OR نينوى OR صلاح الدين OR النجف OR كربلاء OR كركوك OR الأنبار OR السليمانية OR بابل OR ذي قار OR ديالى OR واسط OR ميسان OR المثنى OR الديوانية OR دهوك OR حلبجة) (site:ina.iq OR site:alsabaah.iq OR site:pmo.iq OR site:cabinet.iq OR site:gov.iq OR site:gov.krd OR site:ava.news)"),
                 filterIraqOnly = true
             ),
             FeedEndpoint(
-                url = gn("(أربيل OR السليمانية OR دهوك OR حلبجة OR كركوك OR نينوى OR إقليم كردستان) (site:gov.krd OR site:rudawarabia.net OR site:kurdistan24.net OR site:shafaq.com)"),
+                url = gn("(أربيل OR السليمانية OR دهوك OR حلبجة OR كركوك OR نينوى OR إقليم كردستان) (site:gov.krd OR site:ava.news OR site:rudawarabia.net OR site:kurdistan24.net OR site:shafaq.com)"),
                 filterIraqOnly = true
             ),
             FeedEndpoint(
@@ -614,37 +634,42 @@ object OfficialFeeds {
         NewsCategory.BREAKING to listOf(
             FeedEndpoint(url = rudawSoraniSource.directRssUrl!!, forcedSource = rudawSoraniSource, filterIraqOnly = true),
             FeedEndpoint(url = kurdistan24SoraniSource.directRssUrl!!, forcedSource = kurdistan24SoraniSource, filterIraqOnly = true),
+            FeedEndpoint(url = AVA_MEDIA_GOOGLE_NEWS_RSS, forcedSource = avaMediaSource, filterIraqOnly = true),
             FeedEndpoint(url = krgDmiSource.directRssUrl!!, forcedSource = krgDmiSource, filterIraqOnly = true),
             FeedEndpoint(url = shafaqSource.directRssUrl!!, forcedSource = shafaqSource, filterIraqOnly = true),
-            FeedEndpoint(url = gn("(کوردستان OR هەولێر OR بەغدا OR عێراق) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true)
+            FeedEndpoint(url = gnCkb("(کوردستان OR هەولێر OR بەغدا OR عێراق) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true)
         ),
         NewsCategory.HOLIDAYS to listOf(
             FeedEndpoint(url = krgDmiSource.directRssUrl!!, forcedSource = krgDmiSource, filterIraqOnly = true),
-            FeedEndpoint(url = gn("(پشووی فەرمی OR پشوو OR ڕاگرتنی دەوام OR وەزارەتی پەروەردە) (هەرێمی کوردستان OR عێراق OR هەولێر OR سلێمانی OR دهۆک) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true)
+            FeedEndpoint(url = gnCkb("(پشووی فەرمی OR پشوو OR ڕاگرتنی دەوام OR وەزارەتی پەروەردە) (هەرێمی کوردستان OR عێراق OR هەولێر OR سلێمانی OR دهۆک) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
+            FeedEndpoint(url = AVA_MEDIA_GOOGLE_NEWS_RSS, forcedSource = avaMediaSource, filterIraqOnly = true)
         ),
         NewsCategory.DECISIONS_PROD to listOf(
             FeedEndpoint(url = krgDmiSource.directRssUrl!!, forcedSource = krgDmiSource, filterIraqOnly = true),
-            FeedEndpoint(url = gn("(ئەنجومەنی وەزیران OR حکومەتی هەرێم OR فەرمانگەی میدیا و زانیاری OR بڕیار OR پڕۆژە) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true)
+            FeedEndpoint(url = gnCkb("(ئەنجومەنی وەزیران OR حکومەتی هەرێم OR فەرمانگەی میدیا و زانیاری OR بڕیار OR پڕۆژە) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
+            FeedEndpoint(url = AVA_MEDIA_GOOGLE_NEWS_RSS, forcedSource = avaMediaSource, filterIraqOnly = true)
         ),
         NewsCategory.GOVERNORATES to listOf(
             FeedEndpoint(url = rudawSoraniSource.directRssUrl!!, forcedSource = rudawSoraniSource, filterIraqOnly = true),
             FeedEndpoint(url = kurdistan24SoraniSource.directRssUrl!!, forcedSource = kurdistan24SoraniSource, filterIraqOnly = true),
-            FeedEndpoint(url = gn("(هەولێر OR سلێمانی OR دهۆک OR هەڵەبجە OR کەرکووک OR بەغدا OR مووسڵ OR بەسرە) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true)
+            FeedEndpoint(url = AVA_MEDIA_GOOGLE_NEWS_RSS, forcedSource = avaMediaSource, filterIraqOnly = true),
+            FeedEndpoint(url = gnCkb("(هەولێر OR سلێمانی OR دهۆک OR هەڵەبجە OR کەرکووک OR بەغدا OR مووسڵ OR بەسرە) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true)
         ),
         NewsCategory.ECONOMY to listOf(
-            FeedEndpoint(url = gn("(ئابووری OR نەوت OR دینار OR بودجە OR مووچە) (عێراق OR کوردستان) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
-            FeedEndpoint(url = kurdistan24SoraniSource.directRssUrl!!, forcedSource = kurdistan24SoraniSource, filterIraqOnly = true)
+            FeedEndpoint(url = gnCkb("(ئابووری OR نەوت OR دینار OR بودجە OR مووچە) (عێراق OR کوردستان) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
+            FeedEndpoint(url = kurdistan24SoraniSource.directRssUrl!!, forcedSource = kurdistan24SoraniSource, filterIraqOnly = true),
+            FeedEndpoint(url = AVA_MEDIA_GOOGLE_NEWS_RSS, forcedSource = avaMediaSource, filterIraqOnly = true)
         ),
         NewsCategory.TECH_PROJECTS to listOf(
-            FeedEndpoint(url = gn("(پڕۆژە OR تەکنەلۆژیا OR ڕێگای گەشەپێدان OR بەندەری فاو) (عێراق OR کوردستان) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
+            FeedEndpoint(url = gnCkb("(پڕۆژە OR تەکنەلۆژیا OR ڕێگای گەشەپێدان OR بەندەری فاو) (عێراق OR کوردستان) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
             FeedEndpoint(url = rudawSoraniSource.directRssUrl!!, forcedSource = rudawSoraniSource, filterIraqOnly = true)
         ),
         NewsCategory.SPORTS to listOf(
-            FeedEndpoint(url = gn("(وەرزش OR هەڵبژاردەی عێراق OR خولی عێراق OR خولی کوردستان) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
+            FeedEndpoint(url = gnCkb("(وەرزش OR هەڵبژاردەی عێراق OR خولی عێراق OR خولی کوردستان) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
             FeedEndpoint(url = rudawSoraniSource.directRssUrl!!, forcedSource = rudawSoraniSource, filterIraqOnly = true)
         ),
         NewsCategory.INTERNATIONAL to listOf(
-            FeedEndpoint(url = gn("(عێراق OR هەرێمی کوردستان) (نێودەوڵەتی OR ئەمریکا OR تورکیا OR ئێران) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
+            FeedEndpoint(url = gnCkb("(عێراق OR هەرێمی کوردستان) (نێودەوڵەتی OR ئەمریکا OR تورکیا OR ئێران) ${TrustedSources.kurdishTrustedSitesQuery}"), filterIraqOnly = true),
             FeedEndpoint(url = kurdistan24SoraniSource.directRssUrl!!, forcedSource = kurdistan24SoraniSource, filterIraqOnly = true)
         )
     )

@@ -451,7 +451,7 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `FeaturedHeroCard and NewsArticleCard do not render news images even when imageUrl is set`() {
+  fun `FeaturedHeroCard and NewsArticleCard render images conditionally when imageUrl is present`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val res = context.resourcesForLanguage(AppLanguage.ARABIC)
 
@@ -511,9 +511,9 @@ class ExampleRobolectricTest {
 
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("featured_article_card_with_img").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("featured_hero_image", useUnmergedTree = true).assertDoesNotExist()
+    composeTestRule.onNodeWithTag("featured_hero_image", useUnmergedTree = true).assertIsDisplayed()
     composeTestRule.onNodeWithTag("article_card_with_img").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("article_image_with_img", useUnmergedTree = true).assertDoesNotExist()
+    composeTestRule.onNodeWithTag("article_image_with_img", useUnmergedTree = true).assertIsDisplayed()
     composeTestRule.onNodeWithTag("article_card_no_img").assertIsDisplayed()
     composeTestRule.onNodeWithTag("article_image_no_img", useUnmergedTree = true).assertDoesNotExist()
   }
@@ -763,5 +763,224 @@ class ExampleRobolectricTest {
     assertEquals("بەفر", WeatherClient.weatherCodeToLocalized(71, AppLanguage.KURDISH))
     assertEquals("نیمچە هەور", WeatherClient.weatherCodeToLocalized(1, AppLanguage.KURDISH))
     assertEquals("تەمومژ", WeatherClient.weatherCodeToLocalized(45, AppLanguage.KURDISH))
+  }
+
+  @Test
+  fun `AVA Media official source and Google News RSS feed are integrated across Kurdish and Arabic feeds`() {
+    val ava = TrustedSources.all.find { it.id == "ava_media" }
+    assertTrue(ava != null)
+    assertEquals(SourceTrustLevel.OFFICIAL, ava!!.trustLevel)
+    assertEquals("ava.news", ava.domain)
+    assertEquals("https://news.google.com/rss/search?q=site:ava.news&hl=ckb&gl=IQ&ceid=IQ:ckb", ava.directRssUrl)
+    assertEquals("آڤا ميديا (AVA Media)", ava.displayName(AppLanguage.ARABIC))
+    assertEquals("ئاڤا میدیا (AVA Media)", ava.displayName(AppLanguage.KURDISH))
+
+    val (trust, domain) = TrustedSources.classify("ئاڤا میدیا", "https://ava.news", "https://www.ava.news/ku/story/900")
+    assertEquals(SourceTrustLevel.OFFICIAL, trust)
+    assertEquals("ava.news", domain)
+
+    val kurdishBreaking = OfficialFeeds.feedsFor(NewsCategory.BREAKING, AppLanguage.KURDISH)
+    assertTrue(kurdishBreaking.any { it.url == OfficialFeeds.AVA_MEDIA_GOOGLE_NEWS_RSS && it.forcedSource?.id == "ava_media" })
+
+    val arabicBreaking = OfficialFeeds.feedsFor(NewsCategory.BREAKING, AppLanguage.ARABIC)
+    assertTrue(arabicBreaking.any { it.url == OfficialFeeds.AVA_MEDIA_GOOGLE_NEWS_RSS && it.forcedSource?.id == "ava_media" })
+
+    val displayedCkb = TrustedSources.displayedForLanguage(AppLanguage.KURDISH)
+    assertTrue(displayedCkb.any { it.id == "ava_media" })
+
+    val sampleAvaRss = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <rss version="2.0">
+        <channel>
+          <item>
+            <title>ئەنجومەنی وەزیرانی هەرێمی کوردستان لە هەولێر کۆدەبێتەوە - AVA Media</title>
+            <link>https://news.google.com/rss/articles/CBMiLmh0dHBzOi8vd3d3LmF2YS5uZXdzL2t1L3Bvc3QvMTIzNDU00gEA</link>
+            <source url="https://www.ava.news">AVA Media</source>
+            <description>&lt;a href="https://news.google.com"&gt;ئەنجومەنی وەزیرانی هەرێمی کوردستان لە هەولێر کۆدەبێتەوە&lt;/a&gt; عرض التغطية الكاملة</description>
+          </item>
+        </channel>
+      </rss>
+    """.trimIndent()
+
+    val parsed = RssNewsService().parseRssXml(
+      xml = sampleAvaRss,
+      category = NewsCategory.DECISIONS_PROD,
+      forcedSource = ava,
+      language = AppLanguage.KURDISH
+    )
+    assertEquals(1, parsed.size)
+    assertEquals("ئاڤا میدیا (AVA Media)", parsed.first().source)
+    assertEquals(SourceTrustLevel.OFFICIAL, parsed.first().trustLevel)
+    assertEquals("ava.news", parsed.first().sourceDomain)
+    assertFalse(parsed.first().summary.contains("عرض التغطية الكاملة"))
+  }
+
+  @Test
+  fun `ArticleContentFetcher extracts NextData SSR content, inline images, JSON-LD arrays, and data-n-au redirects`() {
+    val fetcher = com.example.data.remote.ArticleContentFetcher()
+
+    val wrapperHtml = """
+      <html><body><c-wiz data-n-au="https://www.ava.news/news/4042"></c-wiz></body></html>
+    """.trimIndent()
+    assertEquals(
+      "https://www.ava.news/news/4042",
+      fetcher.extractRedirectTarget(wrapperHtml, "https://news.google.com/rss/articles/test")
+    )
+
+    val nextDataHtml = """
+      <html>
+        <head></head>
+        <body>
+          <div id="__next"><p>Redirecting...</p></div>
+          <script id="__NEXT_DATA__" type="application/json">
+            {
+              "props": {
+                "pageProps": {
+                  "post": {
+                    "title": "پڕۆژەی نوێ لە هەولێر",
+                    "coverImage": "/uploads/erbil_bridge.jpg",
+                    "content": "<p>ئەنجومەنی وەزیرانی هەرێمی کوردستان ئەمڕۆ لە هەولێر پڕۆژەیەکی ستراتیژی ڕێگاوبانی پەسەند کرد بۆ خزمەتگوزاری هاووڵاتیان.</p><p>وەزارەتی ئاوەدانکردنەوە و نیشتەجێکردن ڕایگەیاند کارەکانی قۆناغی یەکەم لە هەفتەی داهاتوودا دەست پێ دەکات لە سەرتاسەری پارێزگاکە.</p>"
+                  }
+                }
+              }
+            }
+          </script>
+        </body>
+      </html>
+    """.trimIndent()
+
+    val extractedNext = fetcher.extractFromHtml(
+      html = nextDataHtml,
+      baseUrl = "https://www.ava.news/ku/post/55",
+      titleHint = "پڕۆژەی نوێ لە هەولێر"
+    )
+    assertTrue(extractedNext != null)
+    assertEquals("https://www.ava.news/uploads/erbil_bridge.jpg", extractedNext?.imageUrl)
+    assertTrue(extractedNext!!.fullText.contains("ئەنجومەنی وەزیرانی هەرێمی کوردستان"))
+    assertTrue(extractedNext.fullText.contains("\n\n"))
+    assertFalse(extractedNext.fullText.contains("Redirecting"))
+
+    val inlineImgJsonArrayHtml = """
+      <html>
+        <head>
+          <script type="application/ld+json">
+            {
+              "@type": "NewsArticle",
+              "image": [{"url": "https://www.ava.news/media/hero_photo.webp"}],
+              "articleBody": "أعلنت حكومة إقليم كردستان في أربيل خطة تطوير شبكات الكهرباء والمياه في عموم المحافظات العراقية.\n\nوأكدت الجهات الرسمية استمرار المشاريع الخدمية بوتيرة متصاعدة خلال المرحلة المقبلة."
+            }
+          </script>
+        </head>
+        <body></body>
+      </html>
+    """.trimIndent()
+
+    val extractedLd = fetcher.extractFromHtml(
+      html = inlineImgJsonArrayHtml,
+      baseUrl = "https://www.ava.news/ar/post/77"
+    )
+    assertEquals("https://www.ava.news/media/hero_photo.webp", extractedLd?.imageUrl)
+    assertTrue(extractedLd!!.fullText.contains("خطة تطوير شبكات الكهرباء"))
+  }
+
+  @Test
+  fun `no image is extracted or displayed when published news lacks an actual article photo`() {
+    val fetcher = com.example.data.remote.ArticleContentFetcher()
+
+    // HTML containing only branding og:image, JSON-LD publisher/author images, decorative img outside <article>, and avatar inside <article>
+    val noPhotoArticleHtml = """
+      <html>
+        <head>
+          <meta property="og:image" content="https://example.iq/assets/site-logo.png" />
+          <meta name="twitter:image" content="https://example.iq/images/og-default.jpg" />
+          <script type="application/ld+json">
+            {
+              "@type": "NewsArticle",
+              "author": {"@type": "Person", "image": "https://example.iq/reporter/photo.jpg"},
+              "publisher": {"@type": "Organization", "image": "https://example.iq/brand/masthead.png"}
+            }
+          </script>
+        </head>
+        <body>
+          <div class="top-banner"><img src="https://example.iq/ads/banner.jpg" /></div>
+          <article>
+            <img class="author-avatar" src="https://example.iq/users/writer.jpg" width="40" height="40" />
+            <p>أعلنت وزارة التربية العراقية اليوم عن جدول الامتحانات التمهيدية في بغداد والبصرة وجميع المحافظات.</p>
+            <p>وأكدت الوزارة أن المديريات العامة استكملت جميع الاستعدادات التنظيمية للعام الدراسي الحالي.</p>
+          </article>
+        </body>
+      </html>
+    """.trimIndent()
+
+    val extracted = fetcher.extractFromHtml(
+      html = noPhotoArticleHtml,
+      baseUrl = "https://example.iq/news/44"
+    )
+    assertTrue(extracted != null)
+    assertTrue(extracted!!.fullText.contains("وزارة التربية العراقية"))
+    assertNull(extracted.imageUrl)
+
+    // RSS item whose description only contains a Google News icon or placeholder image -> null
+    val rssNoRealPhoto = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+        <channel>
+          <item>
+            <title>الأمانة العامة لمجلس الوزراء تعلن تعطيل الدوام في بغداد</title>
+            <link>https://cabinet.iq/news/901</link>
+            <media:content url="https://cabinet.iq/images/placeholder-news.jpg" medium="image" />
+            <description>&lt;img src="https://lh3.googleusercontent.com/logo.png" /&gt;&lt;p&gt;بيان رسمي حول الدوام الرسمي في بغداد.&lt;/p&gt;</description>
+          </item>
+        </channel>
+      </rss>
+    """.trimIndent()
+    val parsed = RssNewsService().parseRssXml(rssNoRealPhoto, NewsCategory.HOLIDAYS)
+    assertEquals(1, parsed.size)
+    assertNull(parsed.first().imageUrl)
+
+    // UI Cards must NOT render any image or placeholder frame when imageUrl is null or a generic placeholder
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val res = context.resourcesForLanguage(AppLanguage.ARABIC)
+    val fakePlaceholderArticle = NewsArticle(
+      id = "fake_logo_art",
+      categoryId = NewsCategory.HOLIDAYS.id,
+      isBreaking = false,
+      source = "الأمانة العامة لمجلس الوزراء",
+      sourceDomain = "cabinet.iq",
+      trustLevel = SourceTrustLevel.OFFICIAL,
+      publishedEpochMs = 1_700_000_000_000L,
+      title = "خبر رسمي بدون صورة مرفقة",
+      summary = "لا يحتوي هذا الخبر على صورة منشورة في المصدر.",
+      link = "https://cabinet.iq/news/901",
+      imageUrl = "https://cabinet.iq/images/site-logo.png"
+    )
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(
+        LocalAppLanguage provides AppLanguage.ARABIC,
+        LocalLocalizedResources provides res
+      ) {
+        BayanTheme {
+          androidx.compose.foundation.layout.Column {
+            com.example.ui.components.FeaturedHeroCard(
+              article = fakePlaceholderArticle,
+              onArticleClick = {},
+              onToggleSave = {}
+            )
+            NewsArticleCard(
+              article = fakePlaceholderArticle,
+              onArticleClick = {},
+              onToggleSave = {}
+            )
+          }
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("featured_article_card_fake_logo_art").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("featured_hero_image", useUnmergedTree = true).assertDoesNotExist()
+    composeTestRule.onNodeWithTag("article_card_fake_logo_art").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("article_image_fake_logo_art", useUnmergedTree = true).assertDoesNotExist()
   }
 }

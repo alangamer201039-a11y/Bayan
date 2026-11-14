@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -30,12 +32,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +65,14 @@ fun FeaturedHeroCard(
     val bayanColors = LocalBayanColors.current
     val language = LocalAppLanguage.current
     val categoryLabel = NewsCategory.fromId(article.categoryId).label(language)
+    val sanitizedImageUrl = remember(article.imageUrl) {
+        com.example.data.remote.ArticleContentFetcher.sanitizeArticleImageUrl(
+            url = article.imageUrl,
+            allowLocalResource = true
+        )
+    }
+    var imageLoadFailed by remember(sanitizedImageUrl) { mutableStateOf(false) }
+    val showImage = sanitizedImageUrl != null && !imageLoadFailed
 
     Surface(
         onClick = onArticleClick,
@@ -83,11 +97,35 @@ fun FeaturedHeroCard(
                     )
                 )
         ) {
+            if (showImage) {
+                BayanNewsImage(
+                    imageUrl = sanitizedImageUrl.orEmpty(),
+                    contentDescription = bayanString(R.string.cd_article_image),
+                    contentScale = ContentScale.Crop,
+                    onLoadFailed = { imageLoadFailed = true },
+                    modifier = Modifier
+                        .matchParentSize()
+                        .testTag("featured_hero_image")
+                )
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0xFF0B1324).copy(alpha = 0.42f),
+                                    Color(0xFF0B1324).copy(alpha = 0.78f),
+                                    Color(0xFF0B1324).copy(alpha = 0.95f)
+                                )
+                            )
+                        )
+                )
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(if (showImage) 18.dp else 14.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -200,6 +238,14 @@ fun NewsArticleCard(
     val bayanColors = LocalBayanColors.current
     val language = LocalAppLanguage.current
     val categoryLabel = NewsCategory.fromId(article.categoryId).label(language)
+    val sanitizedImageUrl = remember(article.imageUrl) {
+        com.example.data.remote.ArticleContentFetcher.sanitizeArticleImageUrl(
+            url = article.imageUrl,
+            allowLocalResource = true
+        )
+    }
+    var imageLoadFailed by remember(sanitizedImageUrl) { mutableStateOf(false) }
+    val showImage = sanitizedImageUrl != null && !imageLoadFailed
 
     Surface(
         onClick = onArticleClick,
@@ -265,23 +311,53 @@ fun NewsArticleCard(
                 }
             }
 
-            Text(
-                text = article.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = article.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
 
-            if (article.summary.isNotBlank()) {
-                Text(
-                    text = article.summary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = bayanColors.mutedText,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                    if (article.summary.isNotBlank()) {
+                        Text(
+                            text = article.summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = bayanColors.mutedText,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                if (showImage) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = bayanColors.pillBackground,
+                        border = BorderStroke(1.dp, bayanColors.glassBorder),
+                        modifier = Modifier.size(92.dp)
+                    ) {
+                        BayanNewsImage(
+                            imageUrl = sanitizedImageUrl.orEmpty(),
+                            contentDescription = bayanString(R.string.cd_article_image),
+                            contentScale = ContentScale.Crop,
+                            onLoadFailed = { imageLoadFailed = true },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("article_image_${article.id}")
+                        )
+                    }
+                }
             }
 
             Row(

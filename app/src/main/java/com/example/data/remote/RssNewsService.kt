@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
@@ -81,7 +83,7 @@ class RssNewsService(
 
             // Cap per-category candidates to keep latency low and UI snappy
             val candidates = filteredTrust.take(25)
-            val enriched = enrichTopShortArticles(candidates, maxToEnrich = 6)
+            val enriched = enrichTopShortArticles(candidates, maxToEnrich = 16)
             translationFilter.translateArticles(enriched, language)
         }
     }
@@ -90,36 +92,49 @@ class RssNewsService(
         articles: List<NewsArticle>,
         maxToEnrich: Int
     ): List<NewsArticle> = coroutineScope {
-        val shortIds = articles
-            .filter { it.fullContent.isNullOrBlank() && it.link.isNotBlank() }
+        val targetIds = articles
+            .filter { (it.fullContent.isNullOrBlank() || it.imageUrl.isNullOrBlank()) && it.link.isNotBlank() }
             .take(maxToEnrich)
             .map { it.id }
             .toSet()
 
-        if (shortIds.isEmpty()) return@coroutineScope articles
+        if (targetIds.isEmpty()) return@coroutineScope articles
 
+        val semaphore = Semaphore(6)
         articles.map { article ->
-            if (article.id !in shortIds) {
+            if (article.id !in targetIds) {
                 async { article }
             } else {
                 async {
-                    val extracted = withTimeoutOrNull(4500L) {
-                        runCatching {
-                            articleContentFetcher.fetchFullArticle(
-                                articleUrl = article.link,
-                                titleHint = article.originalTitle.ifBlank { article.title }
-                            )
-                        }.getOrNull()
+                    val extracted = semaphore.withPermit {
+                        withTimeoutOrNull(5500L) {
+                            runCatching {
+                                articleContentFetcher.fetchFullArticle(
+                                    articleUrl = article.link,
+                                    titleHint = article.originalTitle.ifBlank { article.title }
+                                )
+                            }.getOrNull()
+                        }
                     }
-                    if (extracted != null && extracted.fullText.isNotBlank()) {
-                        val detectedLang = NewsTranslationFilter.detectLanguage(extracted.fullText)
+                    if (extracted != null) {
+                        val hasNewText = extracted.fullText.isNotBlank()
+                        val bestFullText = if (hasNewText && (article.fullContent.isNullOrBlank() || extracted.fullText.length > article.fullContent.length)) {
+                            extracted.fullText
+                        } else {
+                            article.fullContent
+                        }
+                        val detectedLang = if (hasNewText) {
+                            NewsTranslationFilter.detectLanguage(bestFullText.orEmpty())
+                        } else {
+                            AppLanguage.fromCode(article.originalLanguageCode)
+                        }
                         val updatedSummary = article.summary.ifBlank { extracted.leadSummary }
                         val updatedOriginalSummary = article.originalSummary.ifBlank { extracted.leadSummary }
                         article.copy(
                             summary = updatedSummary,
-                            fullContent = extracted.fullText,
+                            fullContent = bestFullText,
                             originalSummary = updatedOriginalSummary,
-                            originalFullContent = extracted.fullText,
+                            originalFullContent = bestFullText ?: article.originalFullContent,
                             originalLanguageCode = detectedLang.code,
                             imageUrl = article.imageUrl ?: extracted.imageUrl
                         )
@@ -453,8 +468,13 @@ class RssNewsService(
             if (source.isNotBlank() && cleaned.endsWith(source)) {
                 cleaned = cleaned.removeSuffix(source).trimEnd(' ', '-', ':', '—', '•')
             }
+            val lower = cleaned.lowercase(Locale.ROOT)
+            val isWrapper = lower.contains("عرض التغطية الكاملة") ||
+                lower.contains("view full coverage") ||
+                lower.contains("تفاصيل الخبر كاملة متوفرة")
             cleaned.trim().takeIf {
                 it.isNotBlank() &&
+                    !isWrapper &&
                     it != cleanTitle &&
                     it != source &&
                     it.length > 12
@@ -464,9 +484,34 @@ class RssNewsService(
 
     private fun extractImageUrlsFromHtml(html: String): List<String> {
         if (html.isBlank()) return emptyList()
-        return imgSrcRegex.findAll(html)
-            .mapNotNull { match -> match.groupValues.getOrNull(1)?.trim() }
-            .toList()
+        val urls = mutableListOf<String>()
+        imgTagRegex.findAll(html).forEach { tagMatch ->
+            val tag = tagMatch.value
+            val lower = tag.lowercase(Locale.ROOT)
+            if (lower.contains("avatar") || lower.contains("logo") ||
+                lower.contains("emoji") || lower.contains("wp-smiley") ||
+                lower.contains("icon") || lower.contains("badge")
+            ) {
+                return@forEach
+            }
+            val w = imgWidthRegex.find(tag)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            val h = imgHeightRegex.find(tag)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            if ((w != null && w in 1..48) || (h != null && h in 1..48)) {
+                return@forEach
+            }
+            imgSrcRegex.find(tag)?.groupValues?.getOrNull(1)?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { urls.add(it) }
+            imgSrcSetRegex.find(tag)?.groupValues?.getOrNull(1)
+                ?.split(",")
+                ?.firstOrNull()
+                ?.trim()
+                ?.substringBefore(" ")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { urls.add(it) }
+        }
+        return urls
     }
 
     private fun normalizeImageUrl(
@@ -497,11 +542,7 @@ class RssNewsService(
             else -> return null
         }
 
-        val resolvedLower = resolved.lowercase(Locale.ROOT)
-        if (nonContentImageMarkers.any { resolvedLower.contains(it) }) {
-            return null
-        }
-        return resolved
+        return ArticleContentFetcher.sanitizeArticleImageUrl(resolved)
     }
 
     private fun extractOrigin(url: String): String? {
@@ -524,15 +565,20 @@ class RssNewsService(
     }
 
     companion object {
-        private val imgSrcRegex = Regex(
-            """<img\b[^>]*?\b(?:src|data-src|data-original|data-lazy-src)\s*=\s*["']([^"']+)["']""",
+        private val imgTagRegex = Regex(
+            """<img\b[^>]*>""",
             RegexOption.IGNORE_CASE
         )
-
-        private val nonContentImageMarkers = listOf(
-            ".svg", "1x1", "/pixel", "pixel.", "spacer.", "blank.gif",
-            "transparent.", "favicon", "doubleclick.net", "scorecardresearch.com"
+        private val imgSrcRegex = Regex(
+            """\b(?:src|data-src|data-original|data-lazy-src)\s*=\s*["']([^"']+)["']""",
+            RegexOption.IGNORE_CASE
         )
+        private val imgSrcSetRegex = Regex(
+            """\bsrcset\s*=\s*["']([^"']+)["']""",
+            RegexOption.IGNORE_CASE
+        )
+        private val imgWidthRegex = Regex("""\bwidth\s*=\s*["']?(\d+)["']?""", RegexOption.IGNORE_CASE)
+        private val imgHeightRegex = Regex("""\bheight\s*=\s*["']?(\d+)["']?""", RegexOption.IGNORE_CASE)
     }
 
     private fun stripHtml(html: String): String {

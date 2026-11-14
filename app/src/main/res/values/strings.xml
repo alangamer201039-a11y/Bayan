@@ -91,4 +91,5 @@
     <string name="cd_weather_locate">تحديد الموقع للطقس</string>
     <string name="reader_loading_full_article">جاري جلب نص الخبر كاملاً من المصدر...</string>
     <string name="reader_source_footer">لقراءة النسخة الأصلية على موقع المصدر الرسمي:</string>
+    <string name="cd_iraq_flag">علم جمهورية العراق</string>
 </resources>

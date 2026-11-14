@@ -1,0 +1,47 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="90dp"
+    android:height="60dp"
+    android:viewportWidth="900"
+    android:viewportHeight="600">
+    <!-- Top Red Stripe -->
+    <path
+        android:fillColor="#CE1126"
+        android:pathData="M0,0h900v200h-900z" />
+    <!-- Middle White Stripe -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M0,200h900v200h-900z" />
+    <!-- Bottom Black Stripe -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M0,400h900v200h-900z" />
+
+    <!-- Kufic "الله" (Right Word) -->
+    <!-- Alif -->
+    <path
+        android:fillColor="#007A3D"
+        android:pathData="M690,244h22v116h-22z" />
+    <!-- Lam + Lam + Baseline + Ha loop -->
+    <path
+        android:fillColor="#007A3D"
+        android:fillType="evenOdd"
+        android:pathData="M646,244h22v116h-188v-78h68v56h30v-94h22v94h46z M500,304v34h28v-34z" />
+
+    <!-- Kufic "أكبر" (Left Word) -->
+    <!-- Hamza above Alif -->
+    <path
+        android:fillColor="#007A3D"
+        android:pathData="M398,230h38v13h-24v6h24v10h-38z" />
+    <!-- Alif -->
+    <path
+        android:fillColor="#007A3D"
+        android:pathData="M408,268h22v92h-22z" />
+    <!-- Stepped Kufic Kaf + shared baseline + Ba + Ra -->
+    <path
+        android:fillColor="#007A3D"
+        android:pathData="M338,244h46v20h-26v30h26v66h-136v28h-56v-22h34v-66h22v38h32v-42h22v42h52v-24h-16z" />
+    <!-- Dot below Ba -->
+    <path
+        android:fillColor="#007A3D"
+        android:pathData="M280,370h22v18h-22z" />
+</vector>

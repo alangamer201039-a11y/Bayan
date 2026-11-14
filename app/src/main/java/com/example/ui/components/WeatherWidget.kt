@@ -284,7 +284,7 @@ fun WeatherWidget(
                             }
                         }
 
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(
                                 text = conditionText,
                                 style = MaterialTheme.typography.titleMedium,
@@ -294,11 +294,22 @@ fun WeatherWidget(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.testTag("weather_widget_condition")
                             )
-                            Text(
-                                text = bayanString(R.string.weather_widget_title),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = bayanColors.mutedText
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                IraqFlagBadge(
+                                    width = 21.dp,
+                                    height = 14.dp,
+                                    cornerRadius = 4.dp,
+                                    modifier = Modifier.testTag("weather_iraq_flag")
+                                )
+                                Text(
+                                    text = bayanString(R.string.weather_widget_title),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = bayanColors.mutedText
+                                )
+                            }
                         }
                     }
 

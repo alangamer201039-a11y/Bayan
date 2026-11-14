@@ -143,6 +143,12 @@ fun BayanTopHeader(
                             .padding(horizontal = 4.dp, vertical = 4.dp)
                             .testTag("brand_logo")
                     ) {
+                        IraqFlagBadge(
+                            width = 33.dp,
+                            height = 22.dp,
+                            cornerRadius = 6.dp,
+                            modifier = Modifier.testTag("header_iraq_flag")
+                        )
                         Text(
                             text = bayanString(R.string.brand_title),
                             style = MaterialTheme.typography.displaySmall.copy(fontSize = 24.sp),

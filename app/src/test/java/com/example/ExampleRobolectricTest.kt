@@ -569,11 +569,52 @@ class ExampleRobolectricTest {
 
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("weather_widget").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("weather_iraq_flag", useUnmergedTree = true).assertIsDisplayed()
     composeTestRule.onNodeWithTag("weather_widget_temp", useUnmergedTree = true).assertTextContains("27°C")
     composeTestRule.onNodeWithTag("weather_widget_condition", useUnmergedTree = true).assertTextContains("سماء صافية")
     composeTestRule.onNodeWithTag("weather_widget_location", useUnmergedTree = true).assertTextContains("موقعك الحالي • بغداد")
     composeTestRule.onNodeWithTag("weather_widget_locate_button", useUnmergedTree = true).assertIsDisplayed()
     composeTestRule.onNodeWithTag("weather_widget_refresh_button", useUnmergedTree = true).assertIsDisplayed()
+  }
+
+  @Test
+  fun `BayanTopHeader displays official Iraq flag emblem beside app brand`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val ckbRes = context.resourcesForLanguage(AppLanguage.KURDISH)
+    assertEquals("ئاڵای کۆماری عێراق", ckbRes.getString(R.string.cd_iraq_flag))
+    assertEquals("علم جمهورية العراق", context.getString(R.string.cd_iraq_flag))
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(
+        LocalAppLanguage provides AppLanguage.ARABIC,
+        LocalLocalizedResources provides context.resourcesForLanguage(AppLanguage.ARABIC)
+      ) {
+        BayanTheme {
+          com.example.ui.components.BayanTopHeader(
+            selectedProvince = "بغداد",
+            weather = null,
+            isDarkTheme = true,
+            isLoading = false,
+            isSearchVisible = false,
+            searchQuery = "",
+            showCategories = true,
+            selectedCategory = NewsCategory.ALL,
+            onBrandClick = {},
+            onProvinceClick = {},
+            onRefreshClick = {},
+            onSearchToggleClick = {},
+            onThemeToggleClick = {},
+            onSearchQueryChange = {},
+            onClearSearch = {},
+            onCategorySelected = {}
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("brand_logo").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("header_iraq_flag", useUnmergedTree = true).assertIsDisplayed()
   }
 
   @Test

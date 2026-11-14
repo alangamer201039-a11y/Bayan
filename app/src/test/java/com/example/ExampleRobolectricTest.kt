@@ -451,7 +451,7 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `NewsArticleCard renders image slot conditionally based on imageUrl`() {
+  fun `FeaturedHeroCard and NewsArticleCard do not render news images even when imageUrl is set`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val res = context.resourcesForLanguage(AppLanguage.ARABIC)
 
@@ -489,6 +489,11 @@ class ExampleRobolectricTest {
       ) {
         BayanTheme {
           androidx.compose.foundation.layout.Column {
+            com.example.ui.components.FeaturedHeroCard(
+              article = withImage,
+              onArticleClick = {},
+              onToggleSave = {}
+            )
             NewsArticleCard(
               article = withImage,
               onArticleClick = {},
@@ -505,8 +510,10 @@ class ExampleRobolectricTest {
     }
 
     composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("featured_article_card_with_img").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("featured_hero_image", useUnmergedTree = true).assertDoesNotExist()
     composeTestRule.onNodeWithTag("article_card_with_img").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("article_image_with_img", useUnmergedTree = true).assertIsDisplayed()
+    composeTestRule.onNodeWithTag("article_image_with_img", useUnmergedTree = true).assertDoesNotExist()
     composeTestRule.onNodeWithTag("article_card_no_img").assertIsDisplayed()
     composeTestRule.onNodeWithTag("article_image_no_img", useUnmergedTree = true).assertDoesNotExist()
   }
@@ -567,5 +574,194 @@ class ExampleRobolectricTest {
     composeTestRule.onNodeWithTag("weather_widget_location", useUnmergedTree = true).assertTextContains("موقعك الحالي • بغداد")
     composeTestRule.onNodeWithTag("weather_widget_locate_button", useUnmergedTree = true).assertIsDisplayed()
     composeTestRule.onNodeWithTag("weather_widget_refresh_button", useUnmergedTree = true).assertIsDisplayed()
+  }
+
+  @Test
+  fun `parseRssXml extracts full multi-paragraph content encoded over short description and avoids placeholder`() {
+    val rss = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+        <channel>
+          <item>
+            <title>الأمانة العامة لمجلس الوزراء تعلن خطة المشاريع الوطنية في بغداد</title>
+            <link>https://www.ina.iq/news/777</link>
+            <description>مقتطف قصير حول خطة المشاريع في بغداد.</description>
+            <content:encoded><![CDATA[
+              <p>أعلنت الأمانة العامة لمجلس الوزراء اليوم إطلاق حزمة جديدة من المشاريع الخدمية والتنموية في محافظة بغداد وعدد من المحافظات.</p>
+              <p>وأكد المتحدث الرسمي أن الخطة تشمل تأهيل شبكات الكهرباء والطرق الرئيسية وبناء مدارس جديدة بالتنسيق مع وزارة التربية العراقية.</p>
+              <p>وأشار البيان إلى أن العمل سيبدأ مطلع الأسبوع المقبل وفق جدول زمني محدد لضمان جودة التنفيذ.</p>
+            ]]></content:encoded>
+          </item>
+          <item>
+            <title>خبر عاجل من العراق بدون وصف مرفق - وكالة الأنباء العراقية</title>
+            <link>https://news.google.com/rss/articles/CBMiLmh0dHBzOi8vd3d3LmluYS5pcS9uZXdzLzU1NS5odG1s0gEA</link>
+            <source url="https://www.ina.iq">وكالة الأنباء العراقية</source>
+            <description>&lt;a href="https://news.google.com"&gt;خبر عاجل من العراق بدون وصف مرفق&lt;/a&gt;</description>
+          </item>
+        </channel>
+      </rss>
+    """.trimIndent()
+
+    val items = RssNewsService().parseRssXml(rss, NewsCategory.DECISIONS_PROD)
+    assertEquals(2, items.size)
+
+    val richItem = items[0]
+    assertEquals("مقتطف قصير حول خطة المشاريع في بغداد.", richItem.summary)
+    assertTrue(!richItem.fullContent.isNullOrBlank())
+    assertTrue(richItem.fullContent!!.contains("\n\n"))
+    assertTrue(richItem.fullContent!!.contains("الأمانة العامة لمجلس الوزراء"))
+    assertTrue(richItem.fullContent!!.contains("تأهيل شبكات الكهرباء"))
+    assertTrue(richItem.fullContent!!.contains("مطلع الأسبوع المقبل"))
+
+    val shortItem = items[1]
+    assertFalse(shortItem.summary.contains("تفاصيل الخبر كاملة متوفرة عبر المصدر الرسمي"))
+    assertNull(shortItem.fullContent)
+  }
+
+  @Test
+  fun `ArticleContentFetcher extracts JSON-LD, semantic article paragraphs, og image, and decodes Google News URLs`() {
+    val fetcher = com.example.data.remote.ArticleContentFetcher()
+
+    // Legacy CBMi base64 Google News URL pointing to https://www.ina.iq/news/555.html
+    val decoded = fetcher.decodeGoogleNewsUrl("https://news.google.com/rss/articles/CBMiLmh0dHBzOi8vd3d3LmluYS5pcS9uZXdzLzU1NS5odG1s0gEA?oc=5")
+    assertEquals("https://www.ina.iq/news/555.html", decoded)
+
+    val jsonLdHtml = """
+      <html>
+        <head>
+          <meta property="og:image" content="/uploads/main_news.jpg" />
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "NewsArticle",
+              "headline": "افتتاح مشروع طريق التنمية في البصرة",
+              "articleBody": "أعلنت الحكومة العراقية اليوم المباشرة بأعمال المرحلة الجديدة من طريق التنمية وميناء الفاو الكبير في البصرة.\n\nوأكدت وزارة النقل أن المشروع سيوفر آلاف فرص العمل ويعزز الربط التجاري الإقليمي."
+            }
+          </script>
+        </head>
+        <body><p>إعلان</p></body>
+      </html>
+    """.trimIndent()
+
+    val extractedJsonLd = fetcher.extractFromHtml(
+      html = jsonLdHtml,
+      baseUrl = "https://www.ina.iq/news/10",
+      titleHint = "افتتاح مشروع طريق التنمية في البصرة"
+    )
+    assertTrue(extractedJsonLd != null)
+    assertEquals("https://www.ina.iq/uploads/main_news.jpg", extractedJsonLd?.imageUrl)
+    assertTrue(extractedJsonLd!!.fullText.contains("ميناء الفاو الكبير"))
+    assertTrue(extractedJsonLd.fullText.contains("\n\n"))
+    assertTrue(extractedJsonLd.fullText.contains("وزارة النقل"))
+
+    val articleHtml = """
+      <html>
+        <head><meta property="og:image" content="https://gov.krd/media/road.webp" /></head>
+        <body>
+          <nav><p>الرئيسية | سياسة | اقتصاد | رياضة</p></nav>
+          <article class="article-body">
+            <h1>بيان حكومة إقليم كردستان في أربيل</h1>
+            <p>بيان حكومة إقليم كردستان في أربيل</p>
+            <p>أصدرت دائرة الإعلام والمعلومات في حكومة إقليم كردستان بياناً حول جدول العطل الرسمية ومشاريع الخدمات في أربيل والسليمانية.</p>
+            <p>وأوضح البيان أن المشاريع الجديدة تشمل تطوير شبكات المياه والكهرباء وتحسين الطرق الرابطة بين المحافظات.</p>
+            <p>جميع الحقوق محفوظة © 2026</p>
+          </article>
+          <footer><p>سياسة الخصوصية</p></footer>
+        </body>
+      </html>
+    """.trimIndent()
+
+    val extractedArticle = fetcher.extractFromHtml(
+      html = articleHtml,
+      baseUrl = "https://gov.krd/news/99",
+      titleHint = "بيان حكومة إقليم كردستان في أربيل"
+    )
+    assertTrue(extractedArticle != null)
+    assertEquals("https://gov.krd/media/road.webp", extractedArticle?.imageUrl)
+    assertTrue(extractedArticle!!.fullText.contains("دائرة الإعلام والمعلومات"))
+    assertTrue(extractedArticle.fullText.contains("تطوير شبكات المياه والكهرباء"))
+    assertFalse(extractedArticle.fullText.contains("جميع الحقوق محفوظة"))
+    assertFalse(extractedArticle.fullText.contains("الرئيسية | سياسة"))
+  }
+
+  @Test
+  fun `NewsTranslationFilter translates multi-paragraph fullContent preserving paragraph breaks and official terms`() = kotlinx.coroutines.runBlocking {
+    val filter = com.example.data.remote.NewsTranslationFilter(enableNetworkTranslation = false)
+    val article = NewsArticle(
+      id = "full_tr_1",
+      categoryId = NewsCategory.HOLIDAYS.id,
+      isBreaking = false,
+      source = "الأمانة العامة لمجلس الوزراء",
+      sourceDomain = "cabinet.iq",
+      trustLevel = SourceTrustLevel.OFFICIAL,
+      publishedEpochMs = 1_700_000_000_000L,
+      title = "الأمانة العامة لمجلس الوزراء تعلن عطلة رسمية",
+      summary = "قرار تعطيل الدوام الرسمي في بغداد.",
+      fullContent = "الأمانة العامة لمجلس الوزراء تعلن تعطيل الدوام الرسمي في بغداد.\n\nوزارة التربية تؤكد أن القرار يشمل عطلة رسمية في جميع المحافظات.",
+      link = "https://cabinet.iq/news/88",
+      languageCode = AppLanguage.ARABIC.code
+    )
+
+    val translated = filter.translateArticle(article, AppLanguage.KURDISH)
+    assertEquals(AppLanguage.KURDISH.code, translated.languageCode)
+    assertTrue(!translated.fullContent.isNullOrBlank())
+    assertTrue(translated.fullContent!!.contains("\n\n"))
+    assertTrue(translated.fullContent!!.contains("ئەمیندارێتی گشتی ئەنجومەنی وەزیران"))
+    assertTrue(translated.fullContent!!.contains("وەزارەتی پەروەردە"))
+    assertTrue(translated.fullContent!!.contains("پشووی فەرمی"))
+  }
+
+  @Test
+  fun `Kurdish translation fixes handle borrowed chars, word boundaries, orthography, source localization, and weather`() = kotlinx.coroutines.runBlocking {
+    val filter = com.example.data.remote.NewsTranslationFilter(enableNetworkTranslation = false)
+
+    // 1. Arabic sentence containing borrowed letter 'ڤ' must still detect as ARABIC, not KURDISH
+    val arabicWithBorrowed = "وزارة النقل تنشر ڤيديو عن مشروع توفير الكهرباء في بغداد"
+    assertEquals(AppLanguage.ARABIC, com.example.data.remote.NewsTranslationFilter.detectLanguage(arabicWithBorrowed))
+
+    // 2. Word-boundary replacement must NOT corrupt 'توفير' or 'أعلى' or 'أعلن' when replacing 'في' / 'على' / 'عن'
+    val safeGlossary = filter.translateWithGlossary(
+      text = "رئيس مجلس الوزراء أعلن توفير الخدمات في بغداد",
+      sourceLang = AppLanguage.ARABIC,
+      targetLang = AppLanguage.KURDISH
+    )
+    assertTrue(safeGlossary.contains("سەرۆکی ئەنجومەنی وەزیران"))
+    assertTrue(safeGlossary.contains("دابینکردنی"))
+    assertTrue(safeGlossary.contains("خزمەتگوزارییەکان"))
+    assertTrue(safeGlossary.contains("لە بەغدا"))
+    assertFalse(safeGlossary.contains("تولەر"))
+
+    // 3. Sorani orthography normalization converts Arabic yeh/kaf/ZWNJ-heh cleanly
+    val normalizedSorani = com.example.data.remote.NewsTranslationFilter.normalizeKurdishOrthography(
+      "حكومه‌تی هه‌رێمی كوردستان له‌ هه‌ولێر يان سلێمانى"
+    )
+    assertEquals("حکومەتی هەرێمی کوردستان لە هەولێر یان سلێمانی", normalizedSorani)
+
+    // 4. Article source name is localized cleanly into Sorani Kurdish and back to Arabic
+    val inaArticle = NewsArticle(
+      id = "ina_src_test",
+      categoryId = NewsCategory.DECISIONS_PROD.id,
+      isBreaking = false,
+      source = "وكالة الأنباء العراقية (واع)",
+      sourceDomain = "ina.iq",
+      trustLevel = SourceTrustLevel.OFFICIAL,
+      publishedEpochMs = 1_700_000_000_000L,
+      title = "رئيس مجلس الوزراء يفتتح مشروع الطاقة الكهربائية في البصرة",
+      summary = "توفير الخدمات والموازنة في عموم المحافظات.",
+      link = "https://www.ina.iq/news/888",
+      languageCode = AppLanguage.ARABIC.code
+    )
+    val inKurdish = filter.translateArticle(inaArticle, AppLanguage.KURDISH)
+    assertEquals("ئاژانسی هەواڵی عێراقی (واع)", inKurdish.source)
+    assertTrue(inKurdish.title.contains("سەرۆکی ئەنجومەنی وەزیران"))
+    assertTrue(inKurdish.title.contains("بەسرە"))
+
+    val backToArabic = filter.translateArticle(inKurdish, AppLanguage.ARABIC)
+    assertEquals("وكالة الأنباء العراقية (واع)", backToArabic.source)
+
+    // 5. Kurdish weather descriptions include snow and refined conditions
+    assertEquals("بەفر", WeatherClient.weatherCodeToLocalized(71, AppLanguage.KURDISH))
+    assertEquals("نیمچە هەور", WeatherClient.weatherCodeToLocalized(1, AppLanguage.KURDISH))
+    assertEquals("تەمومژ", WeatherClient.weatherCodeToLocalized(45, AppLanguage.KURDISH))
   }
 }

@@ -4,6 +4,7 @@ import com.example.data.local.ArticleDao
 import com.example.data.local.ArticleEntity
 import com.example.data.local.UserPreferences
 import com.example.data.local.UserPreferencesRepository
+import com.example.data.remote.ArticleContentFetcher
 import com.example.data.remote.NewsTranslationFilter
 import com.example.data.remote.OpenMeteoApi
 import com.example.data.remote.RssNewsService
@@ -26,7 +27,11 @@ class BayanRepository(
     private val articleDao: ArticleDao,
     private val prefsRepo: UserPreferencesRepository,
     private val translationFilter: NewsTranslationFilter = NewsTranslationFilter(),
-    private val rssService: RssNewsService = RssNewsService(translationFilter = translationFilter),
+    private val articleContentFetcher: ArticleContentFetcher = ArticleContentFetcher(),
+    private val rssService: RssNewsService = RssNewsService(
+        translationFilter = translationFilter,
+        articleContentFetcher = articleContentFetcher
+    ),
     private val weatherApi: OpenMeteoApi = WeatherClient.api
 ) {
     val userPreferences: Flow<UserPreferences> = prefsRepo.userPreferences
@@ -92,18 +97,63 @@ class BayanRepository(
 
     suspend fun retranslateCachedArticles(targetLanguage: AppLanguage) {
         val current = allArticles.first()
-        val needingTranslation = current.filter { it.languageCode != targetLanguage.code }
+        val needingTranslation = current.filter {
+            it.languageCode != targetLanguage.code ||
+                (!it.originalFullContent.isNullOrBlank() && it.fullContent.isNullOrBlank())
+        }
         if (needingTranslation.isEmpty()) return
 
         val translated = translationFilter.translateArticles(needingTranslation, targetLanguage)
         translated.forEach { updated ->
             articleDao.updateTranslatedContent(
                 id = updated.id,
+                source = updated.source,
                 title = updated.title,
                 summary = updated.summary,
+                fullContent = updated.fullContent,
                 languageCode = updated.languageCode
             )
         }
+    }
+
+    suspend fun fetchAndCacheFullArticle(
+        article: NewsArticle,
+        targetLanguage: AppLanguage
+    ): NewsArticle? {
+        if (article.link.isBlank()) return null
+        val extracted = runCatching {
+            articleContentFetcher.fetchFullArticle(
+                articleUrl = article.link,
+                titleHint = article.originalTitle.ifBlank { article.title }
+            )
+        }.getOrNull() ?: return null
+
+        if (extracted.fullText.isBlank()) return null
+
+        val detectedSourceLang = NewsTranslationFilter.detectLanguage(extracted.fullText)
+        val rawOriginalSummary = article.originalSummary.ifBlank { extracted.leadSummary }
+        val enrichedRaw = article.copy(
+            summary = article.summary.ifBlank { extracted.leadSummary },
+            fullContent = extracted.fullText,
+            originalSummary = rawOriginalSummary,
+            originalFullContent = extracted.fullText,
+            originalLanguageCode = detectedSourceLang.code,
+            imageUrl = article.imageUrl ?: extracted.imageUrl
+        )
+        val translated = translationFilter.translateArticle(enrichedRaw, targetLanguage)
+        val finalFull = translated.fullContent ?: extracted.fullText
+
+        articleDao.updateFullContent(
+            id = translated.id,
+            summary = translated.summary,
+            fullContent = finalFull,
+            originalSummary = translated.originalSummary,
+            originalFullContent = extracted.fullText,
+            originalLanguageCode = detectedSourceLang.code,
+            languageCode = translated.languageCode,
+            imageUrl = translated.imageUrl
+        )
+        return translated.copy(fullContent = finalFull)
     }
 
     suspend fun toggleSave(article: NewsArticle): Boolean {

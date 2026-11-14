@@ -291,7 +291,8 @@ fun BayanApp(
                 article = opened,
                 fontSize = uiState.fontSize,
                 onDismiss = onCloseArticle,
-                onToggleSave = { onToggleSave(opened) }
+                onToggleSave = { onToggleSave(opened) },
+                isLoadingFullContent = uiState.isFullArticleLoading
             )
         }
     }

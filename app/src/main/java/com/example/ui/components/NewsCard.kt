@@ -6,16 +6,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -33,18 +30,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,14 +59,12 @@ fun FeaturedHeroCard(
     val bayanColors = LocalBayanColors.current
     val language = LocalAppLanguage.current
     val categoryLabel = NewsCategory.fromId(article.categoryId).label(language)
-    var heroImageFailed by remember(article.imageUrl) { mutableStateOf(false) }
-    val heroImageUrl = article.imageUrl?.takeIf { it.isNotBlank() && !heroImageFailed }
 
     Surface(
         onClick = onArticleClick,
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, bayanColors.accentBlue.copy(alpha = 0.3f)),
+        border = BorderStroke(1.dp, bayanColors.accentBlue.copy(alpha = 0.35f)),
         shadowElevation = 6.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -83,42 +73,21 @@ fun FeaturedHeroCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(236.dp)
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.img_iraq_editorial_banner),
-                contentDescription = bayanString(R.string.cd_editorial_banner),
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-            if (heroImageUrl != null) {
-                BayanNewsImage(
-                    imageUrl = heroImageUrl,
-                    contentDescription = bayanString(R.string.cd_article_image),
-                    onLoadFailed = { heroImageFailed = true },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("featured_hero_image")
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0xFF0A0F1C).copy(alpha = 0.35f),
-                                Color(0xFF0A0F1C).copy(alpha = 0.88f),
-                                Color(0xFF0A0F1C).copy(alpha = 0.97f)
-                            )
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF0F1B33),
+                            Color(0xFF132445),
+                            Color(0xFF0B1324)
                         )
                     )
-            )
+                )
+        ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .padding(18.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -172,6 +141,15 @@ fun FeaturedHeroCard(
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (article.summary.isNotBlank()) {
+                        Text(
+                            text = article.summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFFCBD5E1),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -222,8 +200,6 @@ fun NewsArticleCard(
     val bayanColors = LocalBayanColors.current
     val language = LocalAppLanguage.current
     val categoryLabel = NewsCategory.fromId(article.categoryId).label(language)
-    var imageLoadFailed by remember(article.imageUrl) { mutableStateOf(false) }
-    val validImageUrl = article.imageUrl?.takeIf { it.isNotBlank() && !imageLoadFailed }
 
     Surface(
         onClick = onArticleClick,
@@ -289,59 +265,16 @@ fun NewsArticleCard(
                 }
             }
 
-            if (validImageUrl != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = article.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = article.summary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = bayanColors.mutedText,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+            Text(
+                text = article.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
 
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = bayanColors.pillBackground,
-                        border = BorderStroke(1.dp, bayanColors.glassBorder),
-                        modifier = Modifier
-                            .size(width = 104.dp, height = 88.dp)
-                            .testTag("article_image_${article.id}")
-                    ) {
-                        BayanNewsImage(
-                            imageUrl = validImageUrl,
-                            contentDescription = bayanString(R.string.cd_article_image),
-                            onLoadFailed = { imageLoadFailed = true },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-            } else {
-                Text(
-                    text = article.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
+            if (article.summary.isNotBlank()) {
                 Text(
                     text = article.summary,
                     style = MaterialTheme.typography.bodyMedium,

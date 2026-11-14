@@ -52,6 +52,7 @@ data class BayanUiState(
     val isLoading: Boolean = false,
     val hasLoadError: Boolean = false,
     val openedArticle: NewsArticle? = null,
+    val isFullArticleLoading: Boolean = false,
     val toastMessage: String? = null
 )
 
@@ -66,6 +67,7 @@ private data class TransientState(
     val isWeatherLoading: Boolean = false,
     val isDetectingLocation: Boolean = false,
     val openedArticleId: String? = null,
+    val isFullArticleLoading: Boolean = false,
     val toastMessage: String? = null
 )
 
@@ -194,6 +196,7 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
             isLoading = tr.isLoading,
             hasLoadError = tr.hasLoadError && filtered.isEmpty(),
             openedArticle = opened,
+            isFullArticleLoading = tr.isFullArticleLoading && opened != null,
             toastMessage = tr.toastMessage
         )
     }.stateIn(
@@ -449,11 +452,27 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openArticle(article: NewsArticle) {
-        transient.value = transient.value.copy(openedArticleId = article.id)
+        val needsFullText = article.fullContent.isNullOrBlank() && article.link.isNotBlank()
+        transient.value = transient.value.copy(
+            openedArticleId = article.id,
+            isFullArticleLoading = needsFullText
+        )
+        if (needsFullText) {
+            val targetLanguage = uiState.value.language
+            viewModelScope.launch {
+                repository.fetchAndCacheFullArticle(article, targetLanguage)
+                if (transient.value.openedArticleId == article.id) {
+                    transient.value = transient.value.copy(isFullArticleLoading = false)
+                }
+            }
+        }
     }
 
     fun closeArticle() {
-        transient.value = transient.value.copy(openedArticleId = null)
+        transient.value = transient.value.copy(
+            openedArticleId = null,
+            isFullArticleLoading = false
+        )
     }
 
     fun clearToastMessage() {

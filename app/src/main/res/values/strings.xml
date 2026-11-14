@@ -89,4 +89,6 @@
     <string name="toast_location_unavailable">تعذر تحديد الموقع الحالي، يُعرض طقس المحافظة المختارة</string>
     <string name="cd_weather_refresh">تحديث الطقس</string>
     <string name="cd_weather_locate">تحديد الموقع للطقس</string>
+    <string name="reader_loading_full_article">جاري جلب نص الخبر كاملاً من المصدر...</string>
+    <string name="reader_source_footer">لقراءة النسخة الأصلية على موقع المصدر الرسمي:</string>
 </resources>

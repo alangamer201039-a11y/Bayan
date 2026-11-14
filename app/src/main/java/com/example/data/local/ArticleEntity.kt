@@ -19,12 +19,14 @@ data class ArticleEntity(
     val summary: String,
     val link: String,
     val imageUrl: String? = null,
+    val fullContent: String? = null,
     val isSaved: Boolean = false,
     val savedAtMs: Long = 0L,
     val cachedAtMs: Long = System.currentTimeMillis(),
     val languageCode: String = AppLanguage.ARABIC.code,
     val originalTitle: String = title,
     val originalSummary: String = summary,
+    val originalFullContent: String? = fullContent,
     val originalLanguageCode: String = languageCode
 ) {
     fun toDomain(): NewsArticle = NewsArticle(
@@ -39,10 +41,12 @@ data class ArticleEntity(
         summary = summary,
         link = link,
         imageUrl = imageUrl,
+        fullContent = fullContent,
         isSaved = isSaved,
         languageCode = languageCode,
         originalTitle = originalTitle,
         originalSummary = originalSummary,
+        originalFullContent = originalFullContent,
         originalLanguageCode = originalLanguageCode
     )
 
@@ -59,11 +63,13 @@ data class ArticleEntity(
             summary = article.summary,
             link = article.link,
             imageUrl = article.imageUrl,
+            fullContent = article.fullContent,
             isSaved = article.isSaved,
             savedAtMs = savedAtMs,
             languageCode = article.languageCode,
             originalTitle = article.originalTitle,
             originalSummary = article.originalSummary,
+            originalFullContent = article.originalFullContent,
             originalLanguageCode = article.originalLanguageCode
         )
     }

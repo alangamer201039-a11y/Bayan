@@ -78,7 +78,8 @@ object IraqRelevanceFilter {
         "پشووی فەرمی", "پشوو", "ڕاگرتنی دەوام", "پەرلەمانی کوردستان",
         "پەرلەمانی عێراق", "پێشمەرگە", "دیناری عێراقی", "بانکی ناوەندی",
         "هەڵبژاردەی عێراق", "فڕۆکەخانەی هەولێر", "فڕۆکەخانەی سلێمانی",
-        "کوردستان ٢٤", "ڕووداو", "شەفەق", "سۆمۆ"
+        "کوردستان ٢٤", "ڕووداو", "شەفەق", "سۆمۆ", "حکوومەتی", "ئەنجوومەنی وەزیران",
+        "مووچە", "بودجە", "بەغدا", "کەرکوک"
     )
 
     private val strictlyIraqiGovDomains = setOf(
@@ -410,23 +411,49 @@ object TrustedSources {
     val kurdishTrustedSitesQuery: String =
         "(site:gov.krd OR site:krg.org OR site:rudaw.net/sorani OR site:rudaw.net OR site:kurdistan24.net/ckb OR site:kurdistan24.net OR site:shafaq.com/ku)"
 
-    fun classify(sourceName: String, sourceUrl: String, articleLink: String): Pair<SourceTrustLevel, String> {
-        val urlText = "$sourceUrl $articleLink".lowercase()
+    fun findMatch(
+        sourceName: String,
+        sourceDomain: String,
+        articleLink: String
+    ): TrustedSource? {
+        val urlText = "$sourceDomain $articleLink".lowercase()
         val nameLower = sourceName.lowercase()
 
         for (src in all) {
             if (urlText.contains(src.domain)) {
-                return src.trustLevel to src.domain
+                return src
             }
         }
         for (src in all) {
+            if (src.nameAr.lowercase() == nameLower || src.nameCkb.lowercase() == nameLower) {
+                return src
+            }
             if (src.aliases.any { alias ->
                     val aliasLower = alias.lowercase()
                     nameLower.contains(aliasLower) || urlText.contains(aliasLower)
                 }
             ) {
-                return src.trustLevel to src.domain
+                return src
             }
+        }
+        return null
+    }
+
+    fun localizedSourceName(
+        rawSource: String,
+        sourceDomain: String,
+        articleLink: String,
+        language: AppLanguage
+    ): String? {
+        val matched = findMatch(rawSource, sourceDomain, articleLink) ?: return null
+        return matched.displayName(language)
+    }
+
+    fun classify(sourceName: String, sourceUrl: String, articleLink: String): Pair<SourceTrustLevel, String> {
+        val urlText = "$sourceUrl $articleLink".lowercase()
+        val matched = findMatch(sourceName, sourceUrl, articleLink)
+        if (matched != null) {
+            return matched.trustLevel to matched.domain
         }
         if (urlText.contains(".gov.iq") || urlText.contains(".gov.krd") || urlText.contains(".iq/")) {
             return if (urlText.contains(".gov.iq") || urlText.contains(".gov.krd")) {
@@ -770,10 +797,12 @@ data class NewsArticle(
     val summary: String,
     val link: String,
     val imageUrl: String? = null,
+    val fullContent: String? = null,
     val isSaved: Boolean = false,
     val languageCode: String = AppLanguage.ARABIC.code,
     val originalTitle: String = title,
     val originalSummary: String = summary,
+    val originalFullContent: String? = fullContent,
     val originalLanguageCode: String = languageCode
 ) {
     fun relativeTimeAr(nowMs: Long = System.currentTimeMillis()): String =

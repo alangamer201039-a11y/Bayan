@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -29,6 +28,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -41,10 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -68,7 +65,8 @@ fun ArticleDetailSheet(
     article: NewsArticle,
     fontSize: ReadingFontSize,
     onDismiss: () -> Unit,
-    onToggleSave: () -> Unit
+    onToggleSave: () -> Unit,
+    isLoadingFullContent: Boolean = false
 ) {
     val context = LocalContext.current
     val bayanColors = LocalBayanColors.current
@@ -76,8 +74,6 @@ fun ArticleDetailSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val categoryLabel = NewsCategory.fromId(article.categoryId).label(language)
     val shareChooserTitle = bayanString(R.string.share_chooser_title)
-    var detailImageFailed by remember(article.imageUrl) { mutableStateOf(false) }
-    val detailImageUrl = article.imageUrl?.takeIf { it.isNotBlank() && !detailImageFailed }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -198,34 +194,61 @@ fun ArticleDetailSheet(
                 color = bayanColors.glassBorder
             )
 
-            if (detailImageUrl != null) {
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = bayanColors.pillBackground,
-                    border = BorderStroke(1.dp, bayanColors.glassBorder),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .testTag("sheet_article_image")
-                ) {
-                    BayanNewsImage(
-                        imageUrl = detailImageUrl,
-                        contentDescription = bayanString(R.string.cd_article_image),
-                        onLoadFailed = { detailImageFailed = true },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
+            val displayBody = article.fullContent?.takeIf { it.isNotBlank() } ?: article.summary
+            val paragraphs = remember(displayBody) {
+                displayBody.split(Regex("\\n+"))
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
             }
 
-            Text(
-                text = article.summary,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = fontSize.bodySp.sp,
-                    lineHeight = (fontSize.bodySp * 1.8f).sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f)
-            )
+            if (isLoadingFullContent) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = bayanColors.pillBackground,
+                    border = BorderStroke(1.dp, bayanColors.accentBlue.copy(alpha = 0.25f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp)
+                        .testTag("sheet_full_article_loading")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = bayanColors.accentBlue
+                        )
+                        Text(
+                            text = bayanString(R.string.reader_loading_full_article),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = bayanColors.mutedText
+                        )
+                    }
+                }
+            }
+
+            if (paragraphs.isNotEmpty()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("sheet_article_body")
+                ) {
+                    paragraphs.forEach { paragraph ->
+                        Text(
+                            text = paragraph,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = fontSize.bodySp.sp,
+                                lineHeight = (fontSize.bodySp * 1.85f).sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.93f)
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -288,35 +311,52 @@ fun ArticleDetailSheet(
             }
 
             if (article.link.isNotBlank()) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        runCatching {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(article.link))
-                            context.startActivity(intent)
-                        }
-                    },
+                Spacer(modifier = Modifier.height(14.dp))
+                Surface(
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                        .testTag("sheet_open_source_button")
+                    color = bayanColors.pillBackground,
+                    border = BorderStroke(1.dp, bayanColors.glassBorder),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = bayanString(R.string.action_open_source),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = bayanString(R.string.reader_source_footer),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = bayanColors.mutedText
+                        )
+                        Button(
+                            onClick = {
+                                runCatching {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(article.link))
+                                    context.startActivity(intent)
+                                }
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("sheet_open_source_button")
+                        ) {
+                            Text(
+                                text = bayanString(R.string.action_open_source),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
             }
 

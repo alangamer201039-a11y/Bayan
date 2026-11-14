@@ -16,6 +16,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.xmlpull.v1.XmlPullParser
@@ -31,7 +32,8 @@ class RssNewsService(
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .build(),
-    private val translationFilter: NewsTranslationFilter = NewsTranslationFilter()
+    private val translationFilter: NewsTranslationFilter = NewsTranslationFilter(),
+    private val articleContentFetcher: ArticleContentFetcher = ArticleContentFetcher(client)
 ) {
     suspend fun fetchCategoryFeed(
         category: NewsCategory,
@@ -77,10 +79,56 @@ class RssNewsService(
                 merged
             }
 
-            // Cap per-category candidates to keep translation latency low and UI snappy
+            // Cap per-category candidates to keep latency low and UI snappy
             val candidates = filteredTrust.take(25)
-            translationFilter.translateArticles(candidates, language)
+            val enriched = enrichTopShortArticles(candidates, maxToEnrich = 6)
+            translationFilter.translateArticles(enriched, language)
         }
+    }
+
+    private suspend fun enrichTopShortArticles(
+        articles: List<NewsArticle>,
+        maxToEnrich: Int
+    ): List<NewsArticle> = coroutineScope {
+        val shortIds = articles
+            .filter { it.fullContent.isNullOrBlank() && it.link.isNotBlank() }
+            .take(maxToEnrich)
+            .map { it.id }
+            .toSet()
+
+        if (shortIds.isEmpty()) return@coroutineScope articles
+
+        articles.map { article ->
+            if (article.id !in shortIds) {
+                async { article }
+            } else {
+                async {
+                    val extracted = withTimeoutOrNull(4500L) {
+                        runCatching {
+                            articleContentFetcher.fetchFullArticle(
+                                articleUrl = article.link,
+                                titleHint = article.originalTitle.ifBlank { article.title }
+                            )
+                        }.getOrNull()
+                    }
+                    if (extracted != null && extracted.fullText.isNotBlank()) {
+                        val detectedLang = NewsTranslationFilter.detectLanguage(extracted.fullText)
+                        val updatedSummary = article.summary.ifBlank { extracted.leadSummary }
+                        val updatedOriginalSummary = article.originalSummary.ifBlank { extracted.leadSummary }
+                        article.copy(
+                            summary = updatedSummary,
+                            fullContent = extracted.fullText,
+                            originalSummary = updatedOriginalSummary,
+                            originalFullContent = extracted.fullText,
+                            originalLanguageCode = detectedLang.code,
+                            imageUrl = article.imageUrl ?: extracted.imageUrl
+                        )
+                    } else {
+                        article
+                    }
+                }
+            }
+        }.awaitAll()
     }
 
     private fun fetchAndParseEndpoint(
@@ -128,6 +176,8 @@ class RssNewsService(
         var rawLink = ""
         var rawPubDate = ""
         var rawDescription = ""
+        var rawSummary = ""
+        var rawContent = ""
         var rawContentEncoded = ""
         var rawSource = ""
         var rawSourceUrl = ""
@@ -149,6 +199,8 @@ class RssNewsService(
                             rawLink = ""
                             rawPubDate = ""
                             rawDescription = ""
+                            rawSummary = ""
+                            rawContent = ""
                             rawContentEncoded = ""
                             rawSource = ""
                             rawSourceUrl = ""
@@ -171,8 +223,14 @@ class RssNewsService(
                         "pubdate", "published", "updated" -> if (insideItem && rawPubDate.isBlank()) {
                             rawPubDate = safeNextText(parser)
                         }
-                        "description", "summary", "content" -> if (insideItem && rawDescription.isBlank()) {
+                        "description" -> if (insideItem && rawDescription.isBlank()) {
                             rawDescription = safeNextText(parser)
+                        }
+                        "summary" -> if (insideItem && rawSummary.isBlank()) {
+                            rawSummary = safeNextText(parser)
+                        }
+                        "content" -> if (insideItem && rawContent.isBlank()) {
+                            rawContent = safeNextText(parser)
                         }
                         "content:encoded" -> if (insideItem && rawContentEncoded.isBlank()) {
                             rawContentEncoded = safeNextText(parser)
@@ -235,6 +293,8 @@ class RssNewsService(
                             rawLink = rawLink,
                             rawPubDate = rawPubDate,
                             rawDescription = rawDescription,
+                            rawSummary = rawSummary,
+                            rawContent = rawContent,
                             rawContentEncoded = rawContentEncoded,
                             rawSource = rawSource,
                             rawSourceUrl = rawSourceUrl,
@@ -274,6 +334,8 @@ class RssNewsService(
         rawLink: String,
         rawPubDate: String,
         rawDescription: String,
+        rawSummary: String,
+        rawContent: String,
         rawContentEncoded: String,
         rawSource: String,
         rawSourceUrl: String,
@@ -299,22 +361,33 @@ class RssNewsService(
             }
         }
 
-        val descriptionHtml = rawDescription.ifBlank { rawContentEncoded }
-        var cleanDesc = stripHtml(descriptionHtml)
-        if (cleanDesc.startsWith(cleanTitle)) {
-            cleanDesc = cleanDesc.removePrefix(cleanTitle).trim()
+        val cleanTitleNormalized = cleanTitle.trim()
+        val parsedBodies = listOf(rawContentEncoded, rawContent, rawDescription, rawSummary)
+            .filter { it.isNotBlank() }
+            .map { cleanBodyParagraphs(it, cleanTitleNormalized, source) }
+            .filter { it.isNotEmpty() }
+
+        val richParagraphs = parsedBodies
+            .maxByOrNull { list -> list.sumOf { it.length } }
+            .orEmpty()
+        val fullBody = richParagraphs.joinToString("\n\n").trim()
+
+        val shortTeaser = parsedBodies
+            .filter { it != richParagraphs }
+            .map { it.joinToString(" ").trim() }
+            .firstOrNull { it.length > 24 }
+            .orEmpty()
+
+        val hasSubstantialFullText = fullBody.length > 180 || richParagraphs.size >= 2
+        val fullContent: String? = if (hasSubstantialFullText) fullBody else null
+        val summary = when {
+            shortTeaser.length in 25..240 -> shortTeaser
+            hasSubstantialFullText -> ArticleContentFetcher.buildLeadSummary(richParagraphs, maxChars = 220)
+            fullBody.length > 24 -> fullBody
+            else -> ""
         }
-        if (cleanDesc.endsWith(source)) {
-            cleanDesc = cleanDesc.removeSuffix(source).trim()
-        }
-        val detectedSourceLang = NewsTranslationFilter.detectLanguage("$cleanTitle $cleanDesc")
-        val summary = if (cleanDesc.length > 24) {
-            cleanDesc
-        } else if (detectedSourceLang == AppLanguage.KURDISH) {
-            "وردەکاری تەواوی هەواڵەکە لە سەرچاوە فەرمییەکە بەردەستە: $source"
-        } else {
-            "تفاصيل الخبر كاملة متوفرة عبر المصدر الرسمي: $source"
-        }
+
+        val detectedSourceLang = NewsTranslationFilter.detectLanguage("$cleanTitle $summary ${fullContent.orEmpty().take(200)}")
 
         val (trustLevel, sourceDomain) = if (forcedSource != null) {
             forcedSource.trustLevel to forcedSource.domain
@@ -323,7 +396,9 @@ class RssNewsService(
         }
 
         val htmlImageCandidates = extractImageUrlsFromHtml(rawContentEncoded) +
-            extractImageUrlsFromHtml(rawDescription)
+            extractImageUrlsFromHtml(rawContent) +
+            extractImageUrlsFromHtml(rawDescription) +
+            extractImageUrlsFromHtml(rawSummary)
         val imageUrl = (rawImageCandidates + htmlImageCandidates)
             .firstNotNullOfOrNull { candidate ->
                 normalizeImageUrl(
@@ -352,12 +427,39 @@ class RssNewsService(
             summary = summary,
             link = rawLink.trim(),
             imageUrl = imageUrl,
+            fullContent = fullContent,
             isSaved = false,
             languageCode = detectedSourceLang.code,
             originalTitle = cleanTitle,
             originalSummary = summary,
+            originalFullContent = fullContent,
             originalLanguageCode = detectedSourceLang.code
         )
+    }
+
+    private fun cleanBodyParagraphs(
+        rawHtml: String,
+        cleanTitle: String,
+        source: String
+    ): List<String> {
+        val rawParagraphs = ArticleContentFetcher.htmlToParagraphs(rawHtml)
+        if (rawParagraphs.isEmpty()) return emptyList()
+
+        return rawParagraphs.mapNotNull { paragraph ->
+            var cleaned = paragraph.trim()
+            if (cleaned.startsWith(cleanTitle)) {
+                cleaned = cleaned.removePrefix(cleanTitle).trimStart(' ', '-', ':', '—', '•')
+            }
+            if (source.isNotBlank() && cleaned.endsWith(source)) {
+                cleaned = cleaned.removeSuffix(source).trimEnd(' ', '-', ':', '—', '•')
+            }
+            cleaned.trim().takeIf {
+                it.isNotBlank() &&
+                    it != cleanTitle &&
+                    it != source &&
+                    it.length > 12
+            }
+        }
     }
 
     private fun extractImageUrlsFromHtml(html: String): List<String> {

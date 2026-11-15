@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.remote.RssNewsService
 import com.example.data.remote.WeatherClient
@@ -1023,5 +1025,201 @@ class ExampleRobolectricTest {
     composeTestRule.onNodeWithTag("featured_hero_image", useUnmergedTree = true).assertDoesNotExist()
     composeTestRule.onNodeWithTag("article_card_fake_logo_art").assertIsDisplayed()
     composeTestRule.onNodeWithTag("article_image_fake_logo_art", useUnmergedTree = true).assertDoesNotExist()
+  }
+
+  @Test
+  fun `IraqSportsService parses schedule in Baghdad time, official and expected lineups, and final results without video links`() {
+    val service = com.example.data.remote.IraqSportsService()
+    val nowMs = com.example.model.IraqSportsLocalizer.parseIsoToEpochMs("2026-11-15T12:00:00Z")
+
+    val tsdbEventsJson = """
+      {
+        "events": [
+          {
+            "idEvent": "9901",
+            "idLeague": "4893",
+            "strLeague": "Iraq Stars League",
+            "strHomeTeam": "Al-Shorta",
+            "strAwayTeam": "Al-Zawraa",
+            "idHomeTeam": "101",
+            "idAwayTeam": "102",
+            "intHomeScore": "",
+            "intAwayScore": "",
+            "strTimestamp": "2026-11-16T17:30:00+00:00",
+            "strStatus": "Not Started",
+            "strVenue": "Al-Shaab International Stadium",
+            "intRound": "8",
+            "strVideo": "https://example.com/blocked-stream"
+          },
+          {
+            "idEvent": "9902",
+            "idLeague": "4893",
+            "strLeague": "Iraq Stars League",
+            "strHomeTeam": "Al-Quwa Al-Jawiya",
+            "strAwayTeam": "Erbil",
+            "idHomeTeam": "103",
+            "idAwayTeam": "104",
+            "intHomeScore": "2",
+            "intAwayScore": "1",
+            "strTimestamp": "2026-11-14T16:00:00+00:00",
+            "strStatus": "Match Finished",
+            "strVenue": "Al-Madina Stadium",
+            "intRound": "7"
+          }
+        ]
+      }
+    """.trimIndent()
+
+    val parsed = service.parseTheSportsDbEventsJson(tsdbEventsJson, nowMs)
+    assertEquals(2, parsed.size)
+
+    val upcoming = parsed[0]
+    assertEquals(com.example.model.MatchStatus.SCHEDULED, upcoming.status)
+    assertEquals("الشرطة", upcoming.localizedHomeTeam(AppLanguage.ARABIC))
+    assertEquals("الزوراء", upcoming.localizedAwayTeam(AppLanguage.ARABIC))
+    assertEquals("شورتە", upcoming.localizedHomeTeam(AppLanguage.KURDISH))
+    // 17:30 UTC == 20:30 Baghdad (08:30 مساءً)
+    val baghdadTime = com.example.model.IraqSportsLocalizer.formatBaghdadTimeOnly(upcoming.kickoffEpochMs, AppLanguage.ARABIC)
+    assertEquals("08:30 مساءً", baghdadTime)
+
+    val finished = parsed[1]
+    assertEquals(com.example.model.MatchStatus.FINISHED, finished.status)
+    assertEquals(2, finished.homeScore)
+    assertEquals(1, finished.awayScore)
+
+    val officialLineupJson = """
+      {
+        "lineup": [
+          {"strPlayer": "Jalal Hassan", "strPosition": "Goalkeeper", "intSquadNumber": "12", "strSubstitute": "No", "strHome": "Yes", "strFormation": "4-2-3-1"},
+          {"strPlayer": "Aymen Hussein", "strPosition": "Forward", "intSquadNumber": "18", "strSubstitute": "No", "strHome": "Yes"},
+          {"strPlayer": "Ali Jasim", "strPosition": "Midfielder", "intSquadNumber": "7", "strSubstitute": "Yes", "strHome": "Yes"}
+        ]
+      }
+    """.trimIndent()
+    val (homeOfficial, _) = service.parseTheSportsDbLineupJson(officialLineupJson, "Al-Shorta", "Al-Zawraa")
+    assertTrue(homeOfficial != null)
+    assertEquals(com.example.model.LineupSourceType.OFFICIAL, homeOfficial!!.sourceType)
+    assertEquals("4-2-3-1", homeOfficial.formation)
+    assertEquals(2, homeOfficial.starters.size)
+    assertEquals(1, homeOfficial.substitutes.size)
+
+    val rosterJson = """
+      {
+        "player": [
+          {"strPlayer": "Player GK", "strPosition": "Goalkeeper", "strNumber": "1", "strStatus": "Active"},
+          {"strPlayer": "Player DF", "strPosition": "Defender", "strNumber": "4", "strStatus": "Active"},
+          {"strPlayer": "Player FW", "strPosition": "Forward", "strNumber": "9", "strStatus": "Active"}
+        ]
+      }
+    """.trimIndent()
+    val expected = service.parseExpectedLineupFromRosterJson(rosterJson, "Al-Zawraa")
+    assertTrue(expected != null)
+    assertEquals(com.example.model.LineupSourceType.EXPECTED, expected!!.sourceType)
+    assertEquals(3, expected.starters.size)
+  }
+
+  @Test
+  fun `IraqSportsScreen and MatchDetailSheet render schedule, lineups, and final results cleanly without video links`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val res = context.resourcesForLanguage(AppLanguage.ARABIC)
+    val kickoffFuture = com.example.model.IraqSportsLocalizer.parseIsoToEpochMs("2026-11-18T17:00:00Z")
+    val kickoffPast = com.example.model.IraqSportsLocalizer.parseIsoToEpochMs("2026-11-14T15:00:00Z")
+
+    val upcomingMatch = com.example.model.SportsMatch(
+      id = "m_upcoming",
+      provider = "espn",
+      competitionRaw = "World Cup Qualifiers - AFC",
+      homeTeamRaw = "Iraq",
+      awayTeamRaw = "Jordan",
+      kickoffEpochMs = kickoffFuture,
+      status = com.example.model.MatchStatus.SCHEDULED,
+      venue = "Basra International Stadium",
+      homeLineup = com.example.model.TeamLineup(
+        teamNameRaw = "Iraq",
+        formation = "4-2-3-1",
+        sourceType = com.example.model.LineupSourceType.EXPECTED,
+        starters = listOf(
+          com.example.model.LineupPlayer("جلال حسن", "12", "GK", com.example.model.PlayerRole.GOALKEEPER, true),
+          com.example.model.LineupPlayer("أيمن حسين", "18", "FW", com.example.model.PlayerRole.FORWARD, true)
+        )
+      ),
+      isNationalTeamMatch = true
+    )
+
+    val finishedMatch = com.example.model.SportsMatch(
+      id = "m_finished",
+      provider = "thesportsdb",
+      competitionRaw = "Iraq Stars League",
+      homeTeamRaw = "Al-Shorta",
+      awayTeamRaw = "Al-Zawraa",
+      homeScore = 3,
+      awayScore = 1,
+      kickoffEpochMs = kickoffPast,
+      status = com.example.model.MatchStatus.FINISHED,
+      venue = "Al-Shaab Stadium",
+      stats = listOf(
+        com.example.model.MatchStatRow("possession", "الاستحواذ", "کۆنترۆڵی تۆپ", "58%", "42%")
+      )
+    )
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(
+        LocalAppLanguage provides AppLanguage.ARABIC,
+        LocalLocalizedResources provides res
+      ) {
+        BayanTheme {
+          com.example.ui.screens.IraqSportsScreen(
+            matches = listOf(upcomingMatch, finishedMatch),
+            sportsNews = emptyList(),
+            selectedFilter = com.example.model.SportsFilter.ALL,
+            isSportsLoading = false,
+            hasSportsError = false,
+            onSelectFilter = {},
+            onRefreshSports = {},
+            onMatchClick = {},
+            onArticleClick = {},
+            onToggleSaveArticle = {}
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("iraq_sports_banner").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("sports_filter_schedule").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("sports_filter_results").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("sports_match_card_m_upcoming").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("iraq_sports_list").performScrollToNode(hasTestTag("sports_match_card_m_finished"))
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("sports_match_card_m_finished").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("sports_match_score_m_finished", useUnmergedTree = true).assertTextContains("3 - 1")
+  }
+
+  @Test
+  fun `FloatingNavBar restores original 4 tabs without bottom Sports tab`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val res = context.resourcesForLanguage(AppLanguage.ARABIC)
+
+    composeTestRule.setContent {
+      CompositionLocalProvider(
+        LocalAppLanguage provides AppLanguage.ARABIC,
+        LocalLocalizedResources provides res
+      ) {
+        BayanTheme {
+          com.example.ui.components.FloatingNavBar(
+            activeTab = com.example.model.BayanTab.HOME,
+            savedCount = 2,
+            onTabSelected = {}
+          )
+        }
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("nav_tab_home").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("nav_tab_breaking").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("nav_tab_saved").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("nav_tab_settings").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("nav_tab_sports").assertDoesNotExist()
   }
 }

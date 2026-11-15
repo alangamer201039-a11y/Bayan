@@ -13,12 +13,16 @@ import com.example.data.repository.BayanRepository
 import com.example.model.AppLanguage
 import com.example.model.BayanTab
 import com.example.model.IraqRelevanceFilter
+import com.example.model.IraqSportsLocalizer
 import com.example.model.IraqiProvinces
+import com.example.model.MatchStatus
 import com.example.model.NewsArticle
 import com.example.model.NewsCategory
 import com.example.model.ProvinceWeather
 import com.example.model.ReadingFontSize
 import com.example.model.SourceTrustLevel
+import com.example.model.SportsFilter
+import com.example.model.SportsMatch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,6 +53,13 @@ data class BayanUiState(
     val allArticles: List<NewsArticle> = emptyList(),
     val savedArticles: List<NewsArticle> = emptyList(),
     val filteredArticles: List<NewsArticle> = emptyList(),
+    val sportsMatches: List<SportsMatch> = emptyList(),
+    val sportsNewsArticles: List<NewsArticle> = emptyList(),
+    val selectedSportsFilter: SportsFilter = SportsFilter.ALL,
+    val isSportsLoading: Boolean = false,
+    val hasSportsError: Boolean = false,
+    val openedMatch: SportsMatch? = null,
+    val isMatchDetailLoading: Boolean = false,
     val isLoading: Boolean = false,
     val hasLoadError: Boolean = false,
     val openedArticle: NewsArticle? = null,
@@ -66,6 +77,11 @@ private data class TransientState(
     val weather: ProvinceWeather? = null,
     val isWeatherLoading: Boolean = false,
     val isDetectingLocation: Boolean = false,
+    val selectedSportsFilter: SportsFilter = SportsFilter.ALL,
+    val isSportsLoading: Boolean = false,
+    val hasSportsError: Boolean = false,
+    val openedMatchId: String? = null,
+    val isMatchDetailLoading: Boolean = false,
     val openedArticleId: String? = null,
     val isFullArticleLoading: Boolean = false,
     val toastMessage: String? = null
@@ -80,11 +96,12 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
         val db = BayanDatabase.getInstance(application)
         BayanRepository(
             articleDao = db.articleDao(),
-            prefsRepo = UserPreferencesRepository(application)
+            prefsRepo = UserPreferencesRepository(application),
+            sportsMatchDao = db.sportsMatchDao()
         )
     }
 
-    private val transient = MutableStateFlow(TransientState(isLoading = true, isWeatherLoading = true))
+    private val transient = MutableStateFlow(TransientState(isLoading = true, isWeatherLoading = true, isSportsLoading = true))
 
     private fun localizedRes(language: AppLanguage = uiState.value.language): Resources =
         getApplication<Application>().resourcesForLanguage(language)
@@ -102,8 +119,9 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
         repository.userPreferences,
         repository.allArticles,
         repository.savedArticles,
+        repository.sportsMatches,
         transient
-    ) { prefs, all, saved, tr ->
+    ) { prefs, all, saved, matches, tr ->
         val langArticles = all.filter { it.languageCode == prefs.language.code }
         val iraqOnly = langArticles.filter { IraqRelevanceFilter.isRelatedToIraq(it) }
         val trustedFiltered = if (prefs.verifiedSourcesOnly && tr.activeTab != BayanTab.SAVED) {
@@ -172,8 +190,45 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        val rawSportsNews = trustedFiltered.filter { it.categoryId == NewsCategory.SPORTS.id }
+        val sportsNews = if (query.isEmpty()) {
+            rawSportsNews
+        } else {
+            rawSportsNews.filter {
+                it.title.contains(query, ignoreCase = true) ||
+                    it.summary.contains(query, ignoreCase = true) ||
+                    it.source.contains(query, ignoreCase = true)
+            }
+        }
+        val sortedMatches = matches.sortedWith(
+            compareBy<SportsMatch> {
+                when (it.status) {
+                    MatchStatus.LIVE -> 0
+                    MatchStatus.SCHEDULED -> 1
+                    MatchStatus.FINISHED -> 2
+                    MatchStatus.POSTPONED -> 3
+                }
+            }.thenBy {
+                if (it.status == MatchStatus.FINISHED) -it.kickoffEpochMs else it.kickoffEpochMs
+            }
+        )
+        val filteredMatches = if (query.isEmpty()) {
+            sortedMatches
+        } else {
+            sortedMatches.filter { m ->
+                m.homeTeamRaw.contains(query, ignoreCase = true) ||
+                    m.awayTeamRaw.contains(query, ignoreCase = true) ||
+                    m.localizedHomeTeam(prefs.language).contains(query, ignoreCase = true) ||
+                    m.localizedAwayTeam(prefs.language).contains(query, ignoreCase = true) ||
+                    m.localizedCompetition(prefs.language).contains(query, ignoreCase = true)
+            }
+        }
+
         val opened = tr.openedArticleId?.let { id ->
             all.find { it.id == id } ?: saved.find { it.id == id }
+        }
+        val openedMatch = tr.openedMatchId?.let { id ->
+            matches.find { it.id == id }
         }
 
         BayanUiState(
@@ -193,6 +248,13 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
             allArticles = langArticles,
             savedArticles = saved,
             filteredArticles = filtered,
+            sportsMatches = filteredMatches,
+            sportsNewsArticles = sportsNews,
+            selectedSportsFilter = tr.selectedSportsFilter,
+            isSportsLoading = tr.isSportsLoading,
+            hasSportsError = tr.hasSportsError && filteredMatches.isEmpty(),
+            openedMatch = openedMatch,
+            isMatchDetailLoading = tr.isMatchDetailLoading && openedMatch != null,
             isLoading = tr.isLoading,
             hasLoadError = tr.hasLoadError && filtered.isEmpty(),
             openedArticle = opened,
@@ -202,7 +264,7 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = BayanUiState(isLoading = true, isWeatherLoading = true)
+        initialValue = BayanUiState(isLoading = true, isWeatherLoading = true, isSportsLoading = true)
     )
 
     init {
@@ -211,6 +273,7 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
             repository.retranslateCachedArticles(initialLang)
         }
         refreshNews(manual = false)
+        refreshSports(manual = false)
         viewModelScope.launch {
             if (locationTracker.hasLocationPermission()) {
                 detectLocationAndRefreshWeather(userInitiated = false)
@@ -236,6 +299,25 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
                     while (enabled && isActive) {
                         delay(3L * 60_000L)
                         refreshNews(manual = false)
+                        refreshSports(manual = false)
+                    }
+                }
+        }
+        // Poll every 60s when Sports category is active & matches are live or recently kicked off to catch final whistle immediately
+        viewModelScope.launch {
+            transient
+                .map { it.activeTab == BayanTab.HOME && it.selectedCategory == NewsCategory.SPORTS }
+                .distinctUntilChanged()
+                .collectLatest { watchingSports ->
+                    while (watchingSports && isActive) {
+                        delay(60_000L)
+                        val nowMs = System.currentTimeMillis()
+                        val needsLiveScoreSync = uiState.value.sportsMatches.any {
+                            IraqSportsLocalizer.isRecentlyPlayedOrLive(it, nowMs)
+                        }
+                        if (needsLiveScoreSync) {
+                            refreshSports(manual = false)
+                        }
                     }
                 }
         }
@@ -250,6 +332,53 @@ class BayanViewModel(application: Application) : AndroidViewModel(application) {
         if (category != NewsCategory.ALL) {
             refreshNews(manual = false)
         }
+        if (category == NewsCategory.SPORTS) {
+            refreshSports(manual = false)
+        }
+    }
+
+    fun selectSportsFilter(filter: SportsFilter) {
+        transient.value = transient.value.copy(selectedSportsFilter = filter)
+    }
+
+    fun refreshSports(manual: Boolean = false) {
+        transient.value = transient.value.copy(
+            isSportsLoading = true,
+            hasSportsError = false
+        )
+        viewModelScope.launch {
+            val res = repository.refreshSportsMatches()
+            val lang = uiState.value.language
+            transient.value = transient.value.copy(
+                isSportsLoading = false,
+                hasSportsError = res.isFailure,
+                toastMessage = if (manual && res.isFailure && uiState.value.sportsMatches.isEmpty()) {
+                    localizedStr(R.string.sports_error_load, lang)
+                } else {
+                    transient.value.toastMessage
+                }
+            )
+        }
+    }
+
+    fun openMatch(match: SportsMatch) {
+        transient.value = transient.value.copy(
+            openedMatchId = match.id,
+            isMatchDetailLoading = true
+        )
+        viewModelScope.launch {
+            repository.refreshMatchDetails(match)
+            if (transient.value.openedMatchId == match.id) {
+                transient.value = transient.value.copy(isMatchDetailLoading = false)
+            }
+        }
+    }
+
+    fun closeMatch() {
+        transient.value = transient.value.copy(
+            openedMatchId = null,
+            isMatchDetailLoading = false
+        )
     }
 
     fun refreshNews(manual: Boolean = false) {

@@ -2,9 +2,12 @@ package com.example.data.repository
 
 import com.example.data.local.ArticleDao
 import com.example.data.local.ArticleEntity
+import com.example.data.local.SportsMatchDao
+import com.example.data.local.SportsMatchEntity
 import com.example.data.local.UserPreferences
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.remote.ArticleContentFetcher
+import com.example.data.remote.IraqSportsService
 import com.example.data.remote.NewsTranslationFilter
 import com.example.data.remote.OpenMeteoApi
 import com.example.data.remote.RssNewsService
@@ -15,6 +18,7 @@ import com.example.model.NewsArticle
 import com.example.model.NewsCategory
 import com.example.model.ProvinceWeather
 import com.example.model.ReadingFontSize
+import com.example.model.SportsMatch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -26,13 +30,15 @@ import kotlin.math.roundToInt
 class BayanRepository(
     private val articleDao: ArticleDao,
     private val prefsRepo: UserPreferencesRepository,
+    private val sportsMatchDao: SportsMatchDao? = null,
     private val translationFilter: NewsTranslationFilter = NewsTranslationFilter(),
     private val articleContentFetcher: ArticleContentFetcher = ArticleContentFetcher(),
     private val rssService: RssNewsService = RssNewsService(
         translationFilter = translationFilter,
         articleContentFetcher = articleContentFetcher
     ),
-    private val weatherApi: OpenMeteoApi = WeatherClient.api
+    private val weatherApi: OpenMeteoApi = WeatherClient.api,
+    private val sportsService: IraqSportsService = IraqSportsService()
 ) {
     val userPreferences: Flow<UserPreferences> = prefsRepo.userPreferences
 
@@ -41,6 +47,10 @@ class BayanRepository(
 
     val savedArticles: Flow<List<NewsArticle>> = articleDao.observeSavedArticles()
         .map { entities -> entities.map { it.toDomain() } }
+
+    val sportsMatches: Flow<List<SportsMatch>> =
+        sportsMatchDao?.observeAllMatches()?.map { list -> list.map { it.toDomain() } }
+            ?: kotlinx.coroutines.flow.flowOf(emptyList())
 
     suspend fun refreshNews(category: NewsCategory): Result<Int> {
         return try {
@@ -237,5 +247,28 @@ class BayanRepository(
 
     suspend fun setLanguage(language: AppLanguage) {
         prefsRepo.setLanguage(language)
+    }
+
+    suspend fun refreshSportsMatches(): Result<Int> {
+        return try {
+            val fetched = sportsService.fetchIraqiSportsMatches()
+            val dao = sportsMatchDao
+            if (dao != null && fetched.isNotEmpty()) {
+                val nowMs = System.currentTimeMillis()
+                dao.upsertMatches(fetched.map { SportsMatchEntity.fromDomain(it) })
+                dao.pruneOldMatches(nowMs - 72L * 60L * 60L * 1000L)
+            }
+            Result.success(fetched.size)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun refreshMatchDetails(match: SportsMatch): SportsMatch? {
+        return runCatching {
+            val updated = sportsService.fetchMatchDetails(match)
+            sportsMatchDao?.upsertMatches(listOf(SportsMatchEntity.fromDomain(updated)))
+            updated
+        }.getOrNull()
     }
 }

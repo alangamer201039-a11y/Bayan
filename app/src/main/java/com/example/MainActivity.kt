@@ -40,6 +40,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.AppLanguage
 import com.example.model.BayanTab
+import com.example.model.NewsCategory
+import com.example.model.SportsFilter
+import com.example.model.SportsMatch
 import com.example.ui.BayanUiState
 import com.example.ui.BayanViewModel
 import com.example.ui.LocalAppLanguage
@@ -47,7 +50,9 @@ import com.example.ui.LocalLocalizedResources
 import com.example.ui.components.ArticleDetailSheet
 import com.example.ui.components.BayanTopHeader
 import com.example.ui.components.FloatingNavBar
+import com.example.ui.components.MatchDetailSheet
 import com.example.ui.resourcesForLanguage
+import com.example.ui.screens.IraqSportsScreen
 import com.example.ui.screens.NewsFeedScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.BayanTheme
@@ -113,6 +118,10 @@ class MainActivity : ComponentActivity() {
                         onLocateGranted = { viewModel.detectLocationAndRefreshWeather(userInitiated = true) },
                         onLocationPermissionDenied = viewModel::onLocationPermissionDenied,
                         onRefreshWeather = viewModel::refreshWeather,
+                        onSelectSportsFilter = viewModel::selectSportsFilter,
+                        onRefreshSports = { viewModel.refreshSports(manual = true) },
+                        onOpenMatch = viewModel::openMatch,
+                        onCloseMatch = viewModel::closeMatch,
                         onClearToast = viewModel::clearToastMessage
                     )
                 }
@@ -142,14 +151,19 @@ fun BayanApp(
     onLocateGranted: () -> Unit,
     onLocationPermissionDenied: () -> Unit,
     onRefreshWeather: () -> Unit,
+    onSelectSportsFilter: (SportsFilter) -> Unit = {},
+    onRefreshSports: () -> Unit = {},
+    onOpenMatch: (SportsMatch) -> Unit = {},
+    onCloseMatch: () -> Unit = {},
     onClearToast: () -> Unit
 ) {
     val bayanColors = LocalBayanColors.current
 
     BackHandler(
-        enabled = uiState.openedArticle != null || uiState.isSearchVisible || uiState.activeTab != BayanTab.HOME
+        enabled = uiState.openedMatch != null || uiState.openedArticle != null || uiState.isSearchVisible || uiState.activeTab != BayanTab.HOME
     ) {
         when {
+            uiState.openedMatch != null -> onCloseMatch()
             uiState.openedArticle != null -> onCloseArticle()
             uiState.isSearchVisible -> onToggleSearch()
             uiState.activeTab != BayanTab.HOME -> onSelectTab(BayanTab.HOME)
@@ -200,8 +214,8 @@ fun BayanApp(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                when (uiState.activeTab) {
-                    BayanTab.SETTINGS -> {
+                when {
+                    uiState.activeTab == BayanTab.SETTINGS -> {
                         SettingsScreen(
                             selectedProvince = uiState.selectedProvince,
                             selectedLanguage = uiState.language,
@@ -223,6 +237,21 @@ fun BayanApp(
                             onLocateGranted = onLocateGranted,
                             onLocationPermissionDenied = onLocationPermissionDenied,
                             onRefreshWeather = onRefreshWeather
+                        )
+                    }
+
+                    uiState.activeTab == BayanTab.HOME && uiState.selectedCategory == NewsCategory.SPORTS -> {
+                        IraqSportsScreen(
+                            matches = uiState.sportsMatches,
+                            sportsNews = uiState.sportsNewsArticles,
+                            selectedFilter = uiState.selectedSportsFilter,
+                            isSportsLoading = uiState.isSportsLoading,
+                            hasSportsError = uiState.hasSportsError,
+                            onSelectFilter = onSelectSportsFilter,
+                            onRefreshSports = onRefreshSports,
+                            onMatchClick = onOpenMatch,
+                            onArticleClick = onOpenArticle,
+                            onToggleSaveArticle = onToggleSave
                         )
                     }
 
@@ -293,6 +322,16 @@ fun BayanApp(
                 onDismiss = onCloseArticle,
                 onToggleSave = { onToggleSave(opened) },
                 isLoadingFullContent = uiState.isFullArticleLoading
+            )
+        }
+
+        // Sports Match Lineup & Statistics Modal Sheet (Strictly Text, Tables & Stats)
+        val openedMatch = uiState.openedMatch
+        if (openedMatch != null) {
+            MatchDetailSheet(
+                match = openedMatch,
+                isLoadingDetails = uiState.isMatchDetailLoading,
+                onDismiss = onCloseMatch
             )
         }
     }
